@@ -1,0 +1,19 @@
+# Virtual environment
+.venv/
+
+# Generated audio output (personal content)
+anki_audio_out/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment / secrets
+.env
+
+# macOS
+.DS_Store
+
+# Claude Code personal settings
+.claude/
