@@ -8,10 +8,11 @@ Automatically create Japanese Anki flashcards with AI-generated audio — direct
 
 `flashgen` takes a Japanese phrase (or English — it auto-translates), generates a natural-sounding MP3 using OpenAI's text-to-speech API, and creates an Anki flashcard with audio in your deck — all in one command.
 
-It communicates with the locally-running Anki application via the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on and produces two cards per note:
+It communicates with the locally-running Anki application via the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on and produces up to three cards per note:
 
 - **Listening card** — plays the audio and asks 何を言っていますか？; the answer reveals the Japanese text, English translation, and notes.
 - **Production card** — shows the English prompt; the answer reveals the Japanese text, plays the audio, and shows notes.
+- **Response card** *(optional)* — shows an English situational prompt and plays its audio; the answer reveals both the prompt and the response in Japanese, plus the response audio. Only generated when a situational prompt is provided.
 
 ---
 
@@ -102,15 +103,31 @@ You need to create a Note Type with the exact name and fields that `flashgen` ex
 
 1. Open Anki → **Tools** → **Manage Note Types**
 2. Click **Add** → **Add: Basic** → name it exactly: `Japanese Listening+Production`
-3. Click **Fields** and create these four fields in order:
+3. Click **Fields** and create these seven fields in order:
    - `Japanese`
    - `English`
    - `Notes`
    - `Audio`
+   - `Japanese Prompt`
+   - `English Prompt`
+   - `Audio Prompt`
 
 ### Add Card Templates
 
-Still in the Note Type editor, click **Cards** and set up two templates:
+Still in the Note Type editor, click **Cards** and set up three templates:
+
+First, paste this into the **Styling** section (shared across both cards):
+
+```css
+.notes {
+  margin-top: 12px;
+  font-size: 18px;
+  color: #444;
+}
+.nightMode .notes {
+  color: #bbb;
+}
+```
 
 ---
 
@@ -129,14 +146,12 @@ Still in the Note Type editor, click **Cards** and set up two templates:
 
 <hr id=answer>
 
-<div style="font-size: 1.4em;">{{Japanese}}</div>
+<div style="font-size: 1.4em;">{{furigana:Japanese}}</div>
 <br>
 <div>{{English}}</div>
 <br>
 {{#Notes}}
-<div style="margin-top: 12px; color: #666; font-size: 18px;">
-  {{Notes}}
-</div>
+<div class="notes">{{furigana:Notes}}</div>
 {{/Notes}}
 ```
 
@@ -157,14 +172,44 @@ Click **Add Card** to create a second template.
 
 <hr id=answer>
 
-<div style="font-size: 1.4em;">{{Japanese}}</div>
+<div style="font-size: 1.4em;">{{furigana:Japanese}}</div>
 <br>
 <div>{{Audio}}</div>
 {{#Notes}}
-<div style="margin-top: 12px; color: #666; font-size: 18px;">
-  {{Notes}}
-</div>
+<div class="notes">{{furigana:Notes}}</div>
 {{/Notes}}
+```
+
+---
+
+**Card 3 — Response** *(situational prompt → contextual response)*
+
+Click **Add Card** to create a third template. The `{{#Japanese Prompt}}` wrapper ensures this card is only generated for notes that have a prompt — Standard notes are unaffected.
+
+*Front Template:*
+```html
+{{#Japanese Prompt}}
+{{English Prompt}}<br>
+<div>{{Audio Prompt}}</div>
+{{/Japanese Prompt}}
+```
+
+*Back Template:*
+```html
+{{#Japanese Prompt}}
+{{FrontSide}}
+
+<hr id=answer>
+
+<div style="font-size: 1.4em;">{{furigana:Japanese Prompt}}</div>
+<br><br>
+<div style="font-size: 1.4em;">{{furigana:Japanese}}</div>
+<br><br>
+<div>{{English}}</div>
+<br>
+<div>{{Audio}}</div>
+{{#Notes}}<div class="notes">{{furigana:Notes}}</div>{{/Notes}}
+{{/Japanese Prompt}}
 ```
 
 ---
@@ -191,14 +236,27 @@ You can give the phrase in **English or Japanese** — ChatGPT will fill in the 
 
 > *"Flashcard for that sentence, and add a definition for 抑える."*
 
-ChatGPT will output a JSON object like:
+For **Standard cards**, ChatGPT outputs JSON like:
 
 ```json
 {
-  "japanese": "彼はやっとのことで怒りを抑えた。",
+  "japanese": " 彼[かれ]はやっとのことで 怒[いか]りを 抑[おさ]えた。",
   "english": "He finally managed to hold back his anger.",
-  "notes": "やっとのことで: barely, with great effort\n抑える（おさえる）: to hold back, to suppress",
+  "notes": "やっとのことで: barely, with great effort\n 抑[おさ]える: to hold back, to suppress",
   "tags": ["auto", "jp", "conversation"]
+}
+```
+
+For **Response cards**, ChatGPT will first ask about (or propose) a situational prompt, confirm it with you, then output JSON with the additional prompt fields:
+
+```json
+{
+  "japanese": "スティーブ・ 斉[さい] 藤[とう]で 予[よ] 約[やく]しております。",
+  "english": "I have a reservation under the name Steve Saito.",
+  "notes": " 予[よ] 約[やく]: reservation\nしております: polite form of している",
+  "tags": ["auto", "jp", "hotel"],
+  "japanese_prompt": "ご 予[よ] 約[やく]のお 名[な] 前[まえ]を 頂[ちょう] 戴[だい]してもよろしいでしょうか。",
+  "english_prompt": "May I have the name under which your reservation was made?"
 }
 ```
 
@@ -222,14 +280,16 @@ The card appears in Anki immediately, complete with TTS audio.
 
 ```json
 {
-  "japanese": "string (optional — auto-translated from english if omitted)",
-  "english":  "string (optional — auto-translated from japanese if omitted)",
-  "notes":    "string (optional)",
-  "tags":     ["list", "of", "tags"]
+  "japanese":        "string (optional — annotated as kanji[reading]; auto-translated from english if omitted)",
+  "english":         "string (optional — auto-translated from japanese if omitted)",
+  "notes":           "string (optional — use word[reading] format for furigana in definitions)",
+  "tags":            ["list", "of", "tags"],
+  "japanese_prompt": "string (optional — situational prompt in Japanese, annotated as kanji[reading])",
+  "english_prompt":  "string (optional — English version of the situational prompt)"
 }
 ```
 
-At least one of `japanese` or `english` is required.
+At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` must be provided together or not at all — including one without the other is not supported.
 
 ### Output (JSON to stdout)
 
@@ -244,7 +304,10 @@ At least one of `japanese` or `english` is required.
   "notes":            "...",
   "tags":             ["..."],
   "audio_file":       "filename.mp3",
-  "local_audio_path": "anki_audio_out/filename.mp3"
+  "local_audio_path": "anki_audio_out/filename.mp3",
+  "japanese_prompt":  "... (only present for Response cards)",
+  "english_prompt":   "... (only present for Response cards)",
+  "audio_prompt_file": "filename.mp3 (only present for Response cards)"
 }
 ```
 

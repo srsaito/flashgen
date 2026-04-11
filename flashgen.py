@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import json
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any
 
+import json_repair
 import requests
 from openai import OpenAI
 
@@ -55,15 +58,20 @@ def stable_audio_filename(japanese: str) -> str:
     return f"{stem}_{digest}.mp3"
 
 
+def sanitize_text(text: str) -> str:
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFC", text)
+    text = "".join(ch for ch in text if ch.isprintable() or ch == "\n")
+    return text
+
+
 def notes_to_html(notes: str) -> str:
     if not notes.strip():
         return ""
 
-    escaped = (
-        notes.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    notes = sanitize_text(notes)
+    escaped = html.escape(notes, quote=False)
     return escaped.replace("\n", "<br>")
 
 
@@ -217,13 +225,20 @@ def add_note(
     notes: str,
     audio_filename: str,
     tags: list[str],
+    japanese_prompt: str = "",
+    english_prompt: str = "",
+    audio_prompt_filename: str = "",
 ) -> int:
     fields = {
-        "Japanese": japanese,
-        "English": english,
+        "Japanese": html.escape(sanitize_text(japanese), quote=False),
+        "English": html.escape(sanitize_text(english), quote=False),
         "Notes": notes_to_html(notes),
         "Audio": f"[sound:{audio_filename}]",
     }
+    if japanese_prompt:
+        fields["Japanese Prompt"] = html.escape(sanitize_text(japanese_prompt), quote=False)
+        fields["English Prompt"] = html.escape(sanitize_text(english_prompt), quote=False)
+        fields["Audio Prompt"] = f"[sound:{audio_prompt_filename}]"
 
     note: dict[str, Any] = {
         "deckName": deck_name,
@@ -270,6 +285,8 @@ def create_flashcard(
     tags: list[str] | None = None,
     deck_name: str = DECK_NAME,
     model_name: str = MODEL_NAME,
+    japanese_prompt: str = "",
+    english_prompt: str = "",
 ) -> dict[str, Any]:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -297,9 +314,18 @@ def create_flashcard(
 
     audio_filename = stable_audio_filename(japanese)
     local_audio_path = OUTPUT_DIR / audio_filename
-    generate_tts_file(client, japanese, local_audio_path)
+    tts_input = re.sub(r"\[[^\]]+\]", "", japanese)
+    generate_tts_file(client, tts_input, local_audio_path)
 
     stored_audio_name = store_media_file(local_audio_path, audio_filename)
+
+    audio_prompt_filename = ""
+    if japanese_prompt:
+        audio_prompt_filename = stable_audio_filename(japanese_prompt)
+        local_audio_prompt_path = OUTPUT_DIR / audio_prompt_filename
+        tts_prompt_input = re.sub(r"\[[^\]]+\]", "", japanese_prompt)
+        generate_tts_file(client, tts_prompt_input, local_audio_prompt_path)
+        audio_prompt_filename = store_media_file(local_audio_prompt_path, audio_prompt_filename)
 
     note_id = add_note(
         deck_name=deck_name,
@@ -309,9 +335,12 @@ def create_flashcard(
         notes=notes,
         audio_filename=stored_audio_name,
         tags=final_tags,
+        japanese_prompt=japanese_prompt,
+        english_prompt=english_prompt,
+        audio_prompt_filename=audio_prompt_filename,
     )
 
-    return {
+    result: dict[str, Any] = {
         "status": "ok",
         "note_id": note_id,
         "deck": deck_name,
@@ -323,12 +352,18 @@ def create_flashcard(
         "audio_file": stored_audio_name,
         "local_audio_path": str(local_audio_path),
     }
+    if japanese_prompt:
+        result["japanese_prompt"] = japanese_prompt
+        result["english_prompt"] = english_prompt
+        result["audio_prompt_file"] = audio_prompt_filename
+    return result
 
 
 def read_json_input() -> dict[str, Any]:
+    raw = sys.stdin.read()
     try:
-        data = json.load(sys.stdin)
-    except json.JSONDecodeError as e:
+        data = json_repair.loads(raw)
+    except Exception as e:
         raise RuntimeError(
             "Failed to parse JSON from stdin. "
             'Expected JSON like: {"japanese":"...","english":"...","notes":"...","tags":["jp"]}'
@@ -348,6 +383,8 @@ def main() -> None:
         japanese = str(data.get("japanese", "") or "")
         english = str(data.get("english", "") or "")
         notes = str(data.get("notes", "") or "")
+        japanese_prompt = str(data.get("japanese_prompt", "") or "")
+        english_prompt = str(data.get("english_prompt", "") or "")
 
         raw_tags = data.get("tags", DEFAULT_TAGS)
         if raw_tags is None:
@@ -364,6 +401,8 @@ def main() -> None:
                 "english": english,
                 "notes": notes,
                 "tags": tags,
+                "japanese_prompt": japanese_prompt,
+                "english_prompt": english_prompt,
             },
         )
 
@@ -372,6 +411,8 @@ def main() -> None:
             english=english,
             notes=notes,
             tags=tags,
+            japanese_prompt=japanese_prompt,
+            english_prompt=english_prompt,
         )
 
         print(json.dumps(result, ensure_ascii=False, indent=2))
