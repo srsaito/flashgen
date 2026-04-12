@@ -71,10 +71,10 @@ There are two types of flashcards you can create:
 
 ```json
 {
-  "japanese": "お 神[み] 輿[こし]は 神[じん] 社[じゃ]のお 祭[まつ]りで 使[つか]うものですよね。",
-  "english": "A mikoshi is something used at shrine festivals, right?",
-  "notes": "お 神[み] 輿[こし]: portable shrine\n 使[つか]う: to use",
-  "tags": ["auto", "jp", "conversation"]
+  "japanese": " 快[かい]晴[せい]",
+  "english": "clear, cloudless sky; perfectly sunny weather",
+  "notes": " 快[かい]：心地[ここち]よい、すっきり\n 晴[せい]：晴[は]れること、雲[くも]がない天気[てんき]\n 意味[いみ]：雲[くも]が全[まった]くない、よく晴[は]れた天気[てんき]",
+  "tags": ["auto"]
 }
 ```
 
@@ -82,12 +82,12 @@ There are two types of flashcards you can create:
 
 ```json
 {
-  "japanese": "スティーブ・ 斉[さい] 藤[とう]で 予[よ] 約[やく]しております。",
-  "english": "I have a reservation under the name Steve Saito.",
-  "notes": " 予[よ] 約[やく]: reservation\nしております: polite form of している",
-  "tags": ["auto", "jp", "hotel"],
-  "japanese_prompt": "ご 予[よ] 約[やく]のお 名[な] 前[まえ]を 頂[ちょう] 戴[だい]してもよろしいでしょうか。",
-  "english_prompt": "May I have the name under which your reservation was made?"
+  "japanese": " 松[まつ] 本[もと] に 行[い] くかどうか、 決[き] めていません。",
+  "english": "I haven't decided whether to go to Matsumoto.",
+  "notes": " 松本[まつもと]: 長野県[ながのけん]の 市名[しめい]\n 行く[いく]: ある 場所[ばしょ]へ 移動[いどう]する\n かどうか: 「〜かどうか」で whether の 意味[いみ]\n 決める[きめる]: 判断[はんだん]する・選択[せんたく]する → 決めていません: まだ 判断[はんだん]していない 状態[じょうたい]",
+  "tags": ["auto"],
+  "japanese_prompt": " 日本[にほん] に いるとき、 松本[まつもと] に 行[い] きますか？",
+  "english_prompt": "When you're in Japan, will you visit Matsumoto?"
 }
 ```
 
