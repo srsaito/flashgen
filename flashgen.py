@@ -385,6 +385,7 @@ def main() -> None:
         notes = str(data.get("notes", "") or "")
         japanese_prompt = str(data.get("japanese_prompt", "") or "")
         english_prompt = str(data.get("english_prompt", "") or "")
+        deck_name = str(data.get("deck", DECK_NAME) or DECK_NAME)
 
         raw_tags = data.get("tags", DEFAULT_TAGS)
         if raw_tags is None:
@@ -411,6 +412,7 @@ def main() -> None:
             english=english,
             notes=notes,
             tags=tags,
+            deck_name=deck_name,
             japanese_prompt=japanese_prompt,
             english_prompt=english_prompt,
         )

@@ -40,12 +40,15 @@ There are two types of flashcards you can create:
   "english": "...",
   "notes": "...",
   "tags": ["auto"],
+  "deck": "...",
   "japanese_prompt": "...",
   "english_prompt": "..."
 }
 ```
 
 `tags` always contains `"auto"`. Add additional descriptive tags as appropriate (e.g. `"jp"`, `"hotel"`, `"conversation"`).
+
+`deck` is **optional**. Omit it unless I specify a different deck. When included, use the exact deck name I provide.
 
 `japanese_prompt` and `english_prompt` are **optional**. Omit both keys entirely for Standard cards. Never include one without the other.
 

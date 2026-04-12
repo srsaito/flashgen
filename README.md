@@ -189,7 +189,9 @@ Click **Add Card** to create a third template. The `{{#Japanese Prompt}}` wrappe
 *Front Template:*
 ```html
 {{#Japanese Prompt}}
-{{English Prompt}}<br>
+<b>きっかけ</b>：{{English Prompt}}<br>
+<b>回答</b>：{{English}}<br>
+<br>
 <div>{{Audio Prompt}}</div>
 {{/Japanese Prompt}}
 ```
@@ -201,11 +203,11 @@ Click **Add Card** to create a third template. The `{{#Japanese Prompt}}` wrappe
 
 <hr id=answer>
 
+<b>きっかけ</b>：
 <div style="font-size: 1.4em;">{{furigana:Japanese Prompt}}</div>
-<br><br>
+<br>
+<b>回答</b>：
 <div style="font-size: 1.4em;">{{furigana:Japanese}}</div>
-<br><br>
-<div>{{English}}</div>
 <br>
 <div>{{Audio}}</div>
 {{#Notes}}<div class="notes">{{furigana:Notes}}</div>{{/Notes}}
