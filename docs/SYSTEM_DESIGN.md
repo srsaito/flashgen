@@ -60,7 +60,49 @@ MCP/server flow:
 3. The MCP layer calls the same FlashGen engine used by the CLI.
 4. The server returns the engine result or a structured error response.
 
-The server must not maintain a second copy of card schema rules. The CLI and MCP request models should converge on the same field names: `japanese`, `english`, `notes`, `tags`, `deck`, `japanese_prompt`, and `english_prompt`.
+The server must not maintain a second copy of card schema rules. The CLI and MCP request models should converge on the same field names and behavior.
+
+## JSON Contract
+
+The LLM-facing input contract is the JSON object copied from ChatGPT and consumed by the CLI today. The MCP card-creation endpoint should accept the same semantic fields, even if the transport wrapper differs.
+
+Input JSON:
+
+```json
+{
+  "japanese":        "string (optional; annotated as kanji[reading]; auto-translated from english if omitted)",
+  "english":         "string (optional; auto-translated from japanese if omitted)",
+  "notes":           "string (optional; use word[reading] format for furigana in definitions)",
+  "tags":            ["list", "of", "tags"],
+  "deck":            "string (optional; defaults to configured deck)",
+  "japanese_prompt": "string (optional; situational prompt in Japanese, annotated as kanji[reading])",
+  "english_prompt":  "string (optional; English version of the situational prompt)"
+}
+```
+
+At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` describe the situational prompt for Response cards and should be provided together or omitted together.
+
+FlashGen result JSON:
+
+```json
+{
+  "status":            "ok",
+  "note_id":           12345,
+  "deck":              "日本語-Soso",
+  "model":             "Japanese Listening+Production",
+  "japanese":          "...",
+  "english":           "...",
+  "notes":             "...",
+  "tags":              ["..."],
+  "audio_file":        "filename.mp3",
+  "local_audio_path":  "anki_audio_out/filename.mp3",
+  "japanese_prompt":   "... (only present for Response cards)",
+  "english_prompt":    "... (only present for Response cards)",
+  "audio_prompt_file": "filename.mp3 (only present for Response cards)"
+}
+```
+
+The returned `japanese` and `japanese_prompt` fields contain FlashGen-normalized furigana. `audio_file` and `audio_prompt_file` are the filenames stored in Anki media. `local_audio_path` is the local generation path for the primary response audio.
 
 ## Anki Runtime
 
@@ -114,7 +156,7 @@ The existing constants in `flashgen.py` can remain as defaults while the MCP ser
 
 Both CLI and MCP/server should return structured success and error payloads.
 
-Success responses should include the created note id, deck, model, normalized Japanese text, English text, tags, and stored audio filenames.
+Success responses should match the FlashGen result JSON contract above: `status`, `note_id`, `deck`, `model`, normalized `japanese`, `english`, `notes`, `tags`, `audio_file`, `local_audio_path`, and Response-card-only prompt/audio fields when present.
 
 Error responses should distinguish:
 
