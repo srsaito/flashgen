@@ -34,6 +34,11 @@ DEFAULT_TAGS = ["jp", "auto", "conversation"]
 # Debug flag
 DEBUG = False
 
+KANJI_RE = re.compile(r"^[\u3400-\u4dbf\u4e00-\u9fff々〆ヶ]+$")
+ANNOTATED_KANJI_RE = re.compile(
+    r"[\u0020\u3000]*([\u3400-\u4dbf\u4e00-\u9fff々〆ヶ]+)\[([^\]]+)\]"
+)
+
 
 def debug_print(label: str, value: Any) -> None:
     if not DEBUG:
@@ -64,6 +69,50 @@ def sanitize_text(text: str) -> str:
     text = unicodedata.normalize("NFC", text)
     text = "".join(ch for ch in text if ch.isprintable() or ch == "\n")
     return text
+
+
+def is_kanji_text(text: str) -> bool:
+    return bool(KANJI_RE.fullmatch(text))
+
+
+def split_evenly(text: str, chunk_count: int) -> list[str] | None:
+    if chunk_count <= 0 or len(text) % chunk_count != 0:
+        return None
+
+    chunk_size = len(text) // chunk_count
+    return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
+
+
+def normalize_furigana_annotation(kanji: str, reading: str) -> str:
+    if not is_kanji_text(kanji) or len(kanji) == 1:
+        return f" {kanji}[{reading}]"
+
+    reading_chunks = split_evenly(reading, len(kanji))
+    if reading_chunks is None:
+        return f" {kanji}[{reading}]"
+
+    return "".join(
+        f" {kanji_char}[{reading_chunk}]"
+        for kanji_char, reading_chunk in zip(kanji, reading_chunks)
+    )
+
+
+def normalize_furigana_text(text: str) -> str:
+    if not text:
+        return ""
+
+    text = unicodedata.normalize("NFC", text)
+    return ANNOTATED_KANJI_RE.sub(
+        lambda match: normalize_furigana_annotation(match.group(1), match.group(2)),
+        text,
+    )
+
+
+def strip_furigana_markup(text: str) -> str:
+    if not text:
+        return ""
+
+    return ANNOTATED_KANJI_RE.sub(lambda match: match.group(1), text)
 
 
 def notes_to_html(notes: str) -> str:
@@ -301,6 +350,8 @@ def create_flashcard(
     client = OpenAI(api_key=api_key)
 
     japanese, english = fill_missing_translation(client, japanese, english)
+    japanese = normalize_furigana_text(japanese)
+    japanese_prompt = normalize_furigana_text(japanese_prompt)
 
     debug_print(
         "fields after fill_missing_translation",
@@ -314,7 +365,7 @@ def create_flashcard(
 
     audio_filename = stable_audio_filename(japanese)
     local_audio_path = OUTPUT_DIR / audio_filename
-    tts_input = re.sub(r"\[[^\]]+\]", "", japanese)
+    tts_input = strip_furigana_markup(japanese)
     generate_tts_file(client, tts_input, local_audio_path)
 
     stored_audio_name = store_media_file(local_audio_path, audio_filename)
@@ -323,7 +374,7 @@ def create_flashcard(
     if japanese_prompt:
         audio_prompt_filename = stable_audio_filename(japanese_prompt)
         local_audio_prompt_path = OUTPUT_DIR / audio_prompt_filename
-        tts_prompt_input = re.sub(r"\[[^\]]+\]", "", japanese_prompt)
+        tts_prompt_input = strip_furigana_markup(japanese_prompt)
         generate_tts_file(client, tts_prompt_input, local_audio_prompt_path)
         audio_prompt_filename = store_media_file(local_audio_prompt_path, audio_prompt_filename)
 
