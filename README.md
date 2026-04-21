@@ -8,6 +8,13 @@ Automatically create Japanese Anki flashcards with AI-generated audio — direct
 
 `flashgen` takes a Japanese phrase (or English — it auto-translates), generates a natural-sounding MP3 using OpenAI's text-to-speech API, and creates an Anki flashcard with audio in your deck — all in one command.
 
+The project now has two front doors over the same card-generation engine:
+
+- the local CLI workflow through `flashgen.py`
+- the MCP/server workflow under `src/flashgen_mcp/`
+
+The shared design goal is that improvements to translation, furigana normalization, audio generation, and Anki card creation benefit both workflows.
+
 It communicates with the locally-running Anki application via the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on and produces up to three cards per note:
 
 - **Listening card** — plays the audio and asks 何を言っていますか？; the answer reveals the Japanese text, English translation, and notes.
@@ -31,7 +38,7 @@ This tool eliminates steps 3 and 4. You copy the JSON that ChatGPT outputs, run 
 
 ## Prerequisites
 
-- **Python > 3.9** (versions 3.9 and below cause deprecation warnings)
+- **Python >= 3.11**
 - **[Anki](https://apps.ankiweb.net/)** desktop app installed and running
 - **[AnkiConnect](https://ankiweb.net/shared/info/2055492159)** add-on installed in Anki (add-on code: `2055492159`)
 - An **OpenAI API key** with access to TTS and chat models
@@ -49,6 +56,14 @@ cd flashgen
 ```
 
 ### 2. Create a virtual environment and install dependencies
+
+Using `uv`:
+
+```bash
+uv sync --extra dev
+```
+
+Or with `pip`:
 
 ```bash
 python3 -m venv .venv
@@ -92,6 +107,16 @@ Then reload your shell:
 ```bash
 source ~/.zshrc
 ```
+
+### MCP/server scaffold
+
+The MCP/server package currently exposes a health endpoint:
+
+```bash
+uv run uvicorn flashgen_mcp.app:app --reload
+```
+
+The server is intended to call the same card-generation engine as the CLI. See `docs/SYSTEM_DESIGN.md` for the one-repo architecture and Lightsail deployment model.
 
 ---
 

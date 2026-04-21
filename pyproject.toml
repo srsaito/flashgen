@@ -1,0 +1,36 @@
+[project]
+name = "flashgen"
+version = "0.1.0"
+description = "Japanese Anki flashcard generator with CLI and MCP/server front doors."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "httpx",
+  "json-repair>=0.10",
+  "openai>=1.0.0",
+  "pydantic",
+  "requests>=2.28.0",
+  "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["flashgen"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  ".",
+  "src",
+]

@@ -1,0 +1,2 @@
+"""FlashGen MCP service package."""
+

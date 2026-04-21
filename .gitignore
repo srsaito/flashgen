@@ -8,6 +8,7 @@ anki_audio_out/
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 
 # Environment / secrets
 .env
@@ -17,3 +18,8 @@ __pycache__/
 
 # Claude Code personal settings
 .claude/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

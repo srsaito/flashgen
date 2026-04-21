@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "flashgen",
+  "project_id": "7beb7ee5-ac36-4851-a3ca-e79ba8e054f2"
+}
