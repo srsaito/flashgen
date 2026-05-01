@@ -63,7 +63,7 @@ Allowed `tts_provider` values are:
 
 When `tts_provider` is included, `tts_model` must match that provider's model family. Use:
 
-- `gemini` with a Gemini TTS model such as `gemini-3.1-flash-tts-preview`
+- `gemini` with a Gemini TTS model such as `gemini-3.1-flash-tts-preview` or `gemini-2.5-flash-preview-tts`
 - `openai` with an OpenAI TTS model such as `gpt-4o-mini-tts`
 
 ## Rules
@@ -73,8 +73,9 @@ When `tts_provider` is included, `tts_model` must match that provider's model fa
 * Include `japanese_prompt` and `english_prompt` only for Response cards; omit both keys entirely for Standard cards
 * Include `tts_provider` and `tts_model` only when I explicitly ask to force a TTS backend or model; otherwise omit both keys so FlashGen can use its default Gemini TTS path
 * If `tts_provider` is present, it must be exactly `gemini` or `openai`
-* If `tts_provider` is `gemini`, use a Gemini TTS model such as `gemini-3.1-flash-tts-preview`
+* If `tts_provider` is `gemini`, use a Gemini TTS model such as `gemini-3.1-flash-tts-preview` or `gemini-2.5-flash-preview-tts`
 * If `tts_provider` is `openai`, use an OpenAI TTS model such as `gpt-4o-mini-tts`
+* FlashGen defaults to `gemini-3.1-flash-tts-preview` when both TTS fields are omitted, but if I explicitly request Gemini 2.5 you may emit `tts_provider: "gemini"` with `tts_model: "gemini-2.5-flash-preview-tts"`
 * If `english` is not specified, generate a natural English translation based on the conversation
 * In the `japanese` field, annotate every kanji character individually with its reading in `kanji[reading]` format — one bracket per kanji character; put a single regular ASCII space (U+0020) before each annotated kanji to mark where the annotation starts — do NOT use a full-width space (　) — Anki's renderer consumes the ASCII space so it is invisible on the card; leave hiragana, katakana, and punctuation unannotated (e.g. `スピーチコンテスト 中[ちゅう]、 写[しゃ] 真[しん]の 撮[さつ] 影[えい]`)
 * Apply the same kanji annotation rules to `japanese_prompt`

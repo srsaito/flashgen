@@ -92,7 +92,7 @@ DECK_NAME  = "日本語-Soso"                    # Your Anki deck name
 MODEL_NAME = "Japanese Listening+Production"  # Your note type name (see Anki Setup below)
 ```
 
-You can also adjust the default TTS provider, provider-specific voices/models, and default tags here. As of May 1, 2026, the repo defaults to Gemini TTS with `gemini-3.1-flash-tts-preview` and uses `gpt-4o-mini-tts` when `tts_provider` is set to `openai`.
+You can also adjust the default TTS provider, provider-specific voices/models, and default tags here. As of May 1, 2026, the repo defaults to Gemini TTS with `gemini-3.1-flash-tts-preview` and uses `gpt-4o-mini-tts` when `tts_provider` is set to `openai`. FlashGen does not maintain a provider-specific model allowlist, so `tts_provider: "gemini"` can also be paired with another valid Gemini TTS model string such as `gemini-2.5-flash-preview-tts`.
 
 ### 5. Add the `jpflash` alias to `~/.zshrc`
 
@@ -332,7 +332,7 @@ The card appears in Anki immediately, complete with TTS audio.
   "japanese_prompt": "string (optional — situational prompt in Japanese, annotated as kanji[reading])",
   "english_prompt":  "string (optional — English version of the situational prompt)",
   "tts_provider":    "string (optional — openai or gemini; defaults to gemini when both TTS fields are omitted)",
-  "tts_model":       "string (optional — provider-specific TTS model id; must be provided together with tts_provider)"
+  "tts_model":       "string (optional — provider-specific TTS model id such as gemini-3.1-flash-tts-preview, gemini-2.5-flash-preview-tts, or gpt-4o-mini-tts; must be provided together with tts_provider)"
 }
 ```
 
