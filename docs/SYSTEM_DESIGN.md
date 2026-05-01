@@ -51,7 +51,7 @@ CLI flow:
 1. User copies JSON from ChatGPT.
 2. `jpflash` pipes clipboard contents into `flashgen.py`.
 3. `flashgen.py` repairs/parses JSON and calls `create_flashcard(...)`.
-4. The engine fills missing translation fields, normalizes furigana, generates audio, stores media through AnkiConnect, creates the Anki note, and prints structured JSON.
+4. The engine fills missing translation fields, normalizes furigana, resolves the TTS provider/model, generates audio, stores media through AnkiConnect, creates the Anki note, and prints structured JSON.
 
 MCP/server flow:
 
@@ -76,11 +76,13 @@ Input JSON:
   "tags":            ["list", "of", "tags"],
   "deck":            "string (optional; defaults to configured deck)",
   "japanese_prompt": "string (optional; situational prompt in Japanese, annotated as kanji[reading])",
-  "english_prompt":  "string (optional; English version of the situational prompt)"
+  "english_prompt":  "string (optional; English version of the situational prompt)",
+  "tts_provider":    "string (optional; openai or gemini)",
+  "tts_model":       "string (optional; provider-specific TTS model id)"
 }
 ```
 
-At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` describe the situational prompt for Response cards and should be provided together or omitted together.
+At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` describe the situational prompt for Response cards and should be provided together or omitted together. `tts_provider` and `tts_model` should also be provided together or omitted together. If both TTS fields are omitted, the engine defaults to Gemini TTS.
 
 FlashGen result JSON:
 
@@ -94,15 +96,17 @@ FlashGen result JSON:
   "english":           "...",
   "notes":             "...",
   "tags":              ["..."],
-  "audio_file":        "filename.mp3",
-  "local_audio_path":  "anki_audio_out/filename.mp3",
+  "tts_provider":      "gemini",
+  "tts_model":         "gemini-2.5-flash-preview-tts",
+  "audio_file":        "filename.wav",
+  "local_audio_path":  "anki_audio_out/filename.wav",
   "japanese_prompt":   "... (only present for Response cards)",
   "english_prompt":    "... (only present for Response cards)",
-  "audio_prompt_file": "filename.mp3 (only present for Response cards)"
+  "audio_prompt_file": "filename.wav (only present for Response cards)"
 }
 ```
 
-The returned `japanese` and `japanese_prompt` fields contain FlashGen-normalized furigana. `audio_file` and `audio_prompt_file` are the filenames stored in Anki media. `local_audio_path` is the local generation path for the primary response audio.
+The returned `japanese` and `japanese_prompt` fields contain FlashGen-normalized furigana. `audio_file` and `audio_prompt_file` are the filenames stored in Anki media. `local_audio_path` is the local generation path for the primary response audio. Gemini output is stored as `.wav`; OpenAI output is stored as `.mp3`.
 
 ## Anki Runtime
 
@@ -143,25 +147,25 @@ Configuration should move steadily out of constants and into environment-driven 
 Initial settings:
 
 - `OPENAI_API_KEY`
+- `GEMINI_API_KEY`
 - `ANKI_CONNECT_URL`
 - `FLASHGEN_DECK_NAME`
 - `FLASHGEN_MODEL_NAME`
-- `FLASHGEN_TTS_MODEL`
-- `FLASHGEN_TTS_VOICE`
 - `FLASHGEN_TEXT_MODEL`
 
-The existing constants in `flashgen.py` can remain as defaults while the MCP service is being integrated. The core refactor should make these settings explicit inputs.
+The existing constants in `flashgen.py` can remain as defaults while the MCP service is being integrated. Translation continues to use OpenAI when a field must be filled in, while TTS can route to either Gemini or OpenAI per request.
 
 ## Error Handling Contract
 
 Both CLI and MCP/server should return structured success and error payloads.
 
-Success responses should match the FlashGen result JSON contract above: `status`, `note_id`, `deck`, `model`, normalized `japanese`, `english`, `notes`, `tags`, `audio_file`, `local_audio_path`, and Response-card-only prompt/audio fields when present.
+Success responses should match the FlashGen result JSON contract above: `status`, `note_id`, `deck`, `model`, normalized `japanese`, `english`, `notes`, `tags`, resolved `tts_provider`, resolved `tts_model`, `audio_file`, `local_audio_path`, and Response-card-only prompt/audio fields when present.
 
 Error responses should distinguish:
 
 - invalid input
 - missing OpenAI configuration
+- missing Gemini configuration
 - translation failure
 - TTS failure
 - AnkiConnect unavailable

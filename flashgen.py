@@ -8,6 +8,8 @@ import os
 import re
 import sys
 import unicodedata
+import wave
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,8 +20,11 @@ from openai import OpenAI
 # -----------------------------
 # Configuration
 # -----------------------------
+DEFAULT_TTS_PROVIDER = "gemini"
 OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
 OPENAI_TTS_VOICE = "alloy"
+GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"
+GEMINI_TTS_VOICE = "Kore"
 OPENAI_TEXT_MODEL = "gpt-4.1-mini"
 
 ANKI_CONNECT_URL = "http://127.0.0.1:8765"
@@ -40,6 +45,14 @@ ANNOTATED_KANJI_RE = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class TTSConfig:
+    provider: str
+    model: str
+    voice: str
+    extension: str
+
+
 def debug_print(label: str, value: Any) -> None:
     if not DEBUG:
         return
@@ -57,10 +70,10 @@ def safe_filename_stem(text: str, max_len: int = 24) -> str:
     return (cleaned or "audio")[:max_len]
 
 
-def stable_audio_filename(japanese: str) -> str:
+def stable_audio_filename(japanese: str, extension: str = ".mp3") -> str:
     digest = hashlib.sha1(japanese.encode("utf-8")).hexdigest()[:10]
     stem = safe_filename_stem(japanese)
-    return f"{stem}_{digest}.mp3"
+    return f"{stem}_{digest}{extension}"
 
 
 def sanitize_text(text: str) -> str:
@@ -200,15 +213,146 @@ def get_notes_info(note_ids: list[int]) -> object:
     return anki_invoke("notesInfo", {"notes": note_ids})
 
 
-def generate_tts_file(client: OpenAI, text: str, out_path: Path) -> None:
+def resolve_tts_config(
+    tts_provider: str | None = None,
+    tts_model: str | None = None,
+) -> TTSConfig:
+    provider = (tts_provider or "").strip()
+    model = (tts_model or "").strip()
+
+    if bool(provider) != bool(model):
+        raise RuntimeError("'tts_provider' and 'tts_model' must be provided together.")
+
+    if not provider and not model:
+        provider = DEFAULT_TTS_PROVIDER
+        model = GEMINI_TTS_MODEL
+
+    provider = provider.lower()
+    if provider == "openai":
+        extension = ".mp3"
+        voice = OPENAI_TTS_VOICE
+    elif provider == "gemini":
+        extension = ".wav"
+        voice = GEMINI_TTS_VOICE
+    else:
+        raise RuntimeError("'tts_provider' must be one of: openai, gemini.")
+
+    if not model:
+        raise RuntimeError("'tts_model' must be a non-empty string.")
+
+    return TTSConfig(
+        provider=provider,
+        model=model,
+        voice=voice,
+        extension=extension,
+    )
+
+
+def write_wave_file(
+    out_path: Path,
+    pcm_data: bytes,
+    *,
+    channels: int = 1,
+    rate: int = 24000,
+    sample_width: int = 2,
+) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with wave.open(str(out_path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(rate)
+        wav_file.writeframes(pcm_data)
+
+
+def generate_openai_tts_file(
+    client: OpenAI,
+    tts_config: TTSConfig,
+    text: str,
+    out_path: Path,
+) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with client.audio.speech.with_streaming_response.create(
-        model=OPENAI_TTS_MODEL,
-        voice=OPENAI_TTS_VOICE,
+        model=tts_config.model,
+        voice=tts_config.voice,
         input=text,
     ) as response:
         response.stream_to_file(out_path)
+
+
+def generate_gemini_tts_file(
+    api_key: str,
+    tts_config: TTSConfig,
+    text: str,
+    out_path: Path,
+) -> None:
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError as e:
+        raise RuntimeError(
+            "Gemini TTS requires the 'google-genai' package to be installed."
+        ) from e
+
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=tts_config.model,
+        contents=text,
+        config=types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=tts_config.voice
+                    )
+                )
+            ),
+        ),
+    )
+
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        raise RuntimeError("Gemini TTS returned no candidates.")
+
+    parts = getattr(candidates[0].content, "parts", None) or []
+    if not parts or getattr(parts[0], "inline_data", None) is None:
+        raise RuntimeError("Gemini TTS returned no audio payload.")
+
+    inline_data = parts[0].inline_data
+    audio_data = inline_data.data
+    if isinstance(audio_data, str):
+        audio_bytes = base64.b64decode(audio_data)
+    else:
+        audio_bytes = audio_data
+
+    if not isinstance(audio_bytes, bytes) or not audio_bytes:
+        raise RuntimeError("Gemini TTS returned empty audio data.")
+
+    write_wave_file(out_path, audio_bytes)
+
+
+def generate_tts_file(tts_config: TTSConfig, text: str, out_path: Path) -> None:
+    if tts_config.provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set.")
+        generate_openai_tts_file(
+            OpenAI(api_key=api_key),
+            tts_config,
+            text,
+            out_path,
+        )
+        return
+
+    if tts_config.provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY is not set.")
+        generate_gemini_tts_file(api_key, tts_config, text, out_path)
+        return
+
+    raise RuntimeError(f"Unsupported TTS provider: {tts_config.provider}")
 
 
 def store_media_file(local_path: Path, desired_filename: str) -> str:
@@ -336,46 +480,53 @@ def create_flashcard(
     model_name: str = MODEL_NAME,
     japanese_prompt: str = "",
     english_prompt: str = "",
+    tts_provider: str | None = None,
+    tts_model: str | None = None,
 ) -> dict[str, Any]:
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set.")
-
     final_tags = tags if tags is not None else DEFAULT_TAGS
+    tts_config = resolve_tts_config(tts_provider, tts_model)
 
     check_anki_ready(deck_name, model_name)
     field_names = get_model_field_names(model_name)
     debug_print("model fields", field_names)
 
-    client = OpenAI(api_key=api_key)
+    if not japanese.strip() or not english.strip():
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set.")
+        client = OpenAI(api_key=api_key)
+        japanese, english = fill_missing_translation(client, japanese, english)
 
-    japanese, english = fill_missing_translation(client, japanese, english)
     japanese = normalize_furigana_text(japanese)
     japanese_prompt = normalize_furigana_text(japanese_prompt)
 
     debug_print(
-        "fields after fill_missing_translation",
-        {
-            "japanese": japanese,
-            "english": english,
-            "notes": notes,
-            "tags": final_tags,
-        },
-    )
+            "fields after fill_missing_translation",
+            {
+                "japanese": japanese,
+                "english": english,
+                "notes": notes,
+                "tags": final_tags,
+                "tts_provider": tts_config.provider,
+                "tts_model": tts_config.model,
+            },
+        )
 
-    audio_filename = stable_audio_filename(japanese)
+    audio_filename = stable_audio_filename(japanese, tts_config.extension)
     local_audio_path = OUTPUT_DIR / audio_filename
     tts_input = strip_furigana_markup(japanese)
-    generate_tts_file(client, tts_input, local_audio_path)
+    generate_tts_file(tts_config, tts_input, local_audio_path)
 
     stored_audio_name = store_media_file(local_audio_path, audio_filename)
 
     audio_prompt_filename = ""
     if japanese_prompt:
-        audio_prompt_filename = stable_audio_filename(japanese_prompt)
+        audio_prompt_filename = stable_audio_filename(
+            japanese_prompt, tts_config.extension
+        )
         local_audio_prompt_path = OUTPUT_DIR / audio_prompt_filename
         tts_prompt_input = strip_furigana_markup(japanese_prompt)
-        generate_tts_file(client, tts_prompt_input, local_audio_prompt_path)
+        generate_tts_file(tts_config, tts_prompt_input, local_audio_prompt_path)
         audio_prompt_filename = store_media_file(local_audio_prompt_path, audio_prompt_filename)
 
     note_id = add_note(
@@ -402,6 +553,8 @@ def create_flashcard(
         "tags": final_tags,
         "audio_file": stored_audio_name,
         "local_audio_path": str(local_audio_path),
+        "tts_provider": tts_config.provider,
+        "tts_model": tts_config.model,
     }
     if japanese_prompt:
         result["japanese_prompt"] = japanese_prompt
@@ -437,6 +590,10 @@ def main() -> None:
         japanese_prompt = str(data.get("japanese_prompt", "") or "")
         english_prompt = str(data.get("english_prompt", "") or "")
         deck_name = str(data.get("deck", DECK_NAME) or DECK_NAME)
+        raw_tts_provider = data.get("tts_provider")
+        raw_tts_model = data.get("tts_model")
+        tts_provider = None if raw_tts_provider is None else str(raw_tts_provider or "")
+        tts_model = None if raw_tts_model is None else str(raw_tts_model or "")
 
         raw_tags = data.get("tags", DEFAULT_TAGS)
         if raw_tags is None:
@@ -455,6 +612,8 @@ def main() -> None:
                 "tags": tags,
                 "japanese_prompt": japanese_prompt,
                 "english_prompt": english_prompt,
+                "tts_provider": tts_provider,
+                "tts_model": tts_model,
             },
         )
 
@@ -466,6 +625,8 @@ def main() -> None:
             deck_name=deck_name,
             japanese_prompt=japanese_prompt,
             english_prompt=english_prompt,
+            tts_provider=tts_provider,
+            tts_model=tts_model,
         )
 
         print(json.dumps(result, ensure_ascii=False, indent=2))

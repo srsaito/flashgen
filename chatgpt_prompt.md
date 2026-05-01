@@ -42,7 +42,9 @@ There are two types of flashcards you can create:
   "tags": ["auto"],
   "deck": "...",
   "japanese_prompt": "...",
-  "english_prompt": "..."
+  "english_prompt": "...",
+  "tts_provider": "gemini",
+  "tts_model": "gemini-2.5-flash-preview-tts"
 }
 ```
 
@@ -52,11 +54,14 @@ There are two types of flashcards you can create:
 
 `japanese_prompt` and `english_prompt` are **optional**. Omit both keys entirely for Standard cards. Never include one without the other.
 
+`tts_provider` and `tts_model` are **optional**. Omit both keys unless I explicitly ask to force a provider/model for this card. If included, always include both keys together.
+
 ## Rules
 
 * Output must be valid JSON only (no surrounding text, no backticks, no markdown fences)
 * Always include all four core keys: `japanese`, `english`, `notes`, `tags`
 * Include `japanese_prompt` and `english_prompt` only for Response cards; omit both keys entirely for Standard cards
+* Include `tts_provider` and `tts_model` only when I explicitly ask to force a TTS backend or model; otherwise omit both keys so FlashGen can use its default Gemini TTS path
 * If `english` is not specified, generate a natural English translation based on the conversation
 * In the `japanese` field, annotate every kanji character individually with its reading in `kanji[reading]` format — one bracket per kanji character; put a single regular ASCII space (U+0020) before each annotated kanji to mark where the annotation starts — do NOT use a full-width space (　) — Anki's renderer consumes the ASCII space so it is invisible on the card; leave hiragana, katakana, and punctuation unannotated (e.g. `スピーチコンテスト 中[ちゅう]、 写[しゃ] 真[しん]の 撮[さつ] 影[えい]`)
 * Apply the same kanji annotation rules to `japanese_prompt`

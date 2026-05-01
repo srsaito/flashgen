@@ -6,7 +6,7 @@ Automatically create Japanese Anki flashcards with AI-generated audio — direct
 
 ## What it does
 
-`flashgen` takes a Japanese phrase (or English — it auto-translates), generates a natural-sounding MP3 using OpenAI's text-to-speech API, and creates an Anki flashcard with audio in your deck — all in one command.
+`flashgen` takes a Japanese phrase (or English — it auto-translates), generates provider-selectable TTS audio, and creates an Anki flashcard with audio in your deck — all in one command.
 
 The project now has two front doors over the same card-generation engine:
 
@@ -41,7 +41,8 @@ This tool eliminates steps 3 and 4. You copy the JSON that ChatGPT outputs, run 
 - **Python >= 3.11**
 - **[Anki](https://apps.ankiweb.net/)** desktop app installed and running
 - **[AnkiConnect](https://ankiweb.net/shared/info/2055492159)** add-on installed in Anki (add-on code: `2055492159`)
-- An **OpenAI API key** with access to TTS and chat models
+- A **Gemini API key** for the default TTS path
+- An **OpenAI API key** if you want OpenAI TTS or want FlashGen to auto-translate missing `japanese` or `english`
 - **macOS** (the `jpflash` alias uses `pbpaste`; Linux/Windows users can adapt it)
 
 ---
@@ -71,13 +72,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Set your OpenAI API key
+### 3. Set your API keys
 
 Add this to your `~/.zshrc` (or `~/.bashrc`):
 
 ```zsh
+export GEMINI_API_KEY="AIza..."
 export OPENAI_API_KEY="sk-..."
 ```
+
+`GEMINI_API_KEY` powers the default TTS path. `OPENAI_API_KEY` is only required when you choose OpenAI TTS or when FlashGen needs to translate because one of `japanese` or `english` is missing.
 
 ### 4. Configure flashgen
 
@@ -88,7 +92,7 @@ DECK_NAME  = "日本語-Soso"                    # Your Anki deck name
 MODEL_NAME = "Japanese Listening+Production"  # Your note type name (see Anki Setup below)
 ```
 
-You can also adjust the TTS voice, models, and default tags here.
+You can also adjust the default TTS provider, provider-specific voices/models, and default tags here. As of May 1, 2026, the repo defaults to Gemini TTS with `gemini-2.5-flash-preview-tts` and uses `gpt-4o-mini-tts` when `tts_provider` is set to `openai`.
 
 ### 5. Add the `jpflash` alias to `~/.zshrc`
 
@@ -274,6 +278,19 @@ For **Standard cards**, ChatGPT outputs JSON like:
 }
 ```
 
+If you want to force a particular TTS backend for a card, include both `tts_provider` and `tts_model` together. For example:
+
+```json
+{
+  "japanese": " 写[しゃ] 真[しん]を 撮[さつ] 影[えい]しました。",
+  "english": "I took a photo.",
+  "notes": "",
+  "tags": ["auto", "jp"],
+  "tts_provider": "openai",
+  "tts_model": "gpt-4o-mini-tts"
+}
+```
+
 For **Response cards**, ChatGPT will first ask about (or propose) a situational prompt, confirm it with you, then output JSON with the additional prompt fields:
 
 ```json
@@ -311,12 +328,15 @@ The card appears in Anki immediately, complete with TTS audio.
   "english":         "string (optional — auto-translated from japanese if omitted)",
   "notes":           "string (optional — use word[reading] format for furigana in definitions)",
   "tags":            ["list", "of", "tags"],
+  "deck":            "string (optional — overrides the configured deck)",
   "japanese_prompt": "string (optional — situational prompt in Japanese, annotated as kanji[reading])",
-  "english_prompt":  "string (optional — English version of the situational prompt)"
+  "english_prompt":  "string (optional — English version of the situational prompt)",
+  "tts_provider":    "string (optional — openai or gemini; defaults to gemini when both TTS fields are omitted)",
+  "tts_model":       "string (optional — provider-specific TTS model id; must be provided together with tts_provider)"
 }
 ```
 
-At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` must be provided together or not at all — including one without the other is not supported.
+At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` must be provided together or not at all. `tts_provider` and `tts_model` must also be provided together or not at all. If both TTS fields are omitted, FlashGen defaults to Gemini TTS.
 
 ### Output (JSON to stdout)
 
@@ -330,13 +350,17 @@ At least one of `japanese` or `english` is required. `japanese_prompt` and `engl
   "english":          "...",
   "notes":            "...",
   "tags":             ["..."],
-  "audio_file":       "filename.mp3",
-  "local_audio_path": "anki_audio_out/filename.mp3",
+  "tts_provider":     "gemini",
+  "tts_model":        "gemini-2.5-flash-preview-tts",
+  "audio_file":       "filename.wav",
+  "local_audio_path": "anki_audio_out/filename.wav",
   "japanese_prompt":  "... (only present for Response cards)",
   "english_prompt":   "... (only present for Response cards)",
-  "audio_prompt_file": "filename.mp3 (only present for Response cards)"
+  "audio_prompt_file": "filename.wav (only present for Response cards)"
 }
 ```
+
+When Gemini TTS is used, `audio_file` and `audio_prompt_file` end in `.wav`. When OpenAI TTS is used, they end in `.mp3`.
 
 ---
 
