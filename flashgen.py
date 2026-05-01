@@ -23,7 +23,7 @@ from openai import OpenAI
 DEFAULT_TTS_PROVIDER = "gemini"
 OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
 OPENAI_TTS_VOICE = "alloy"
-GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"
+GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview"
 GEMINI_TTS_VOICE = "Kore"
 OPENAI_TEXT_MODEL = "gpt-4.1-mini"
 

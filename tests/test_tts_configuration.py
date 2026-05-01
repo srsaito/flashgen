@@ -6,6 +6,13 @@ import flashgen
 
 
 class TTSConfigurationTests(unittest.TestCase):
+    def test_resolve_tts_config_defaults_to_gemini_3_1_preview(self):
+        tts_config = flashgen.resolve_tts_config()
+
+        self.assertEqual(tts_config.provider, "gemini")
+        self.assertEqual(tts_config.model, "gemini-3.1-flash-tts-preview")
+        self.assertEqual(tts_config.extension, ".wav")
+
     def test_create_flashcard_defaults_to_gemini_without_openai_key(self):
         captured = {}
         tts_calls = []

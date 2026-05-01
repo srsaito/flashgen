@@ -92,7 +92,7 @@ DECK_NAME  = "日本語-Soso"                    # Your Anki deck name
 MODEL_NAME = "Japanese Listening+Production"  # Your note type name (see Anki Setup below)
 ```
 
-You can also adjust the default TTS provider, provider-specific voices/models, and default tags here. As of May 1, 2026, the repo defaults to Gemini TTS with `gemini-2.5-flash-preview-tts` and uses `gpt-4o-mini-tts` when `tts_provider` is set to `openai`.
+You can also adjust the default TTS provider, provider-specific voices/models, and default tags here. As of May 1, 2026, the repo defaults to Gemini TTS with `gemini-3.1-flash-tts-preview` and uses `gpt-4o-mini-tts` when `tts_provider` is set to `openai`.
 
 ### 5. Add the `jpflash` alias to `~/.zshrc`
 
@@ -351,7 +351,7 @@ At least one of `japanese` or `english` is required. `japanese_prompt` and `engl
   "notes":            "...",
   "tags":             ["..."],
   "tts_provider":     "gemini",
-  "tts_model":        "gemini-2.5-flash-preview-tts",
+  "tts_model":        "gemini-3.1-flash-tts-preview",
   "audio_file":       "filename.wav",
   "local_audio_path": "anki_audio_out/filename.wav",
   "japanese_prompt":  "... (only present for Response cards)",

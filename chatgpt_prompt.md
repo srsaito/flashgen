@@ -44,7 +44,7 @@ There are two types of flashcards you can create:
   "japanese_prompt": "...",
   "english_prompt": "...",
   "tts_provider": "gemini",
-  "tts_model": "gemini-2.5-flash-preview-tts"
+  "tts_model": "gemini-3.1-flash-tts-preview"
 }
 ```
 
