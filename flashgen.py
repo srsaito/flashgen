@@ -128,6 +128,12 @@ def strip_furigana_markup(text: str) -> str:
     return ANNOTATED_KANJI_RE.sub(lambda match: match.group(1), text)
 
 
+def resolve_tts_input(display_text: str, tts_text: str = "") -> str:
+    candidate = tts_text if tts_text.strip() else strip_furigana_markup(display_text)
+    candidate = unicodedata.normalize("NFC", sanitize_text(candidate))
+    return strip_furigana_markup(candidate).strip()
+
+
 def notes_to_html(notes: str) -> str:
     if not notes.strip():
         return ""
@@ -480,6 +486,8 @@ def create_flashcard(
     model_name: str = MODEL_NAME,
     japanese_prompt: str = "",
     english_prompt: str = "",
+    japanese_tts: str = "",
+    japanese_prompt_tts: str = "",
     tts_provider: str | None = None,
     tts_model: str | None = None,
 ) -> dict[str, Any]:
@@ -499,6 +507,8 @@ def create_flashcard(
 
     japanese = normalize_furigana_text(japanese)
     japanese_prompt = normalize_furigana_text(japanese_prompt)
+    japanese_tts = resolve_tts_input(japanese, japanese_tts)
+    japanese_prompt_tts = resolve_tts_input(japanese_prompt, japanese_prompt_tts)
 
     debug_print(
             "fields after fill_missing_translation",
@@ -507,26 +517,26 @@ def create_flashcard(
                 "english": english,
                 "notes": notes,
                 "tags": final_tags,
+                "japanese_tts": japanese_tts,
+                "japanese_prompt_tts": japanese_prompt_tts,
                 "tts_provider": tts_config.provider,
                 "tts_model": tts_config.model,
             },
         )
 
-    audio_filename = stable_audio_filename(japanese, tts_config.extension)
+    audio_filename = stable_audio_filename(japanese_tts, tts_config.extension)
     local_audio_path = OUTPUT_DIR / audio_filename
-    tts_input = strip_furigana_markup(japanese)
-    generate_tts_file(tts_config, tts_input, local_audio_path)
+    generate_tts_file(tts_config, japanese_tts, local_audio_path)
 
     stored_audio_name = store_media_file(local_audio_path, audio_filename)
 
     audio_prompt_filename = ""
     if japanese_prompt:
         audio_prompt_filename = stable_audio_filename(
-            japanese_prompt, tts_config.extension
+            japanese_prompt_tts, tts_config.extension
         )
         local_audio_prompt_path = OUTPUT_DIR / audio_prompt_filename
-        tts_prompt_input = strip_furigana_markup(japanese_prompt)
-        generate_tts_file(tts_config, tts_prompt_input, local_audio_prompt_path)
+        generate_tts_file(tts_config, japanese_prompt_tts, local_audio_prompt_path)
         audio_prompt_filename = store_media_file(local_audio_prompt_path, audio_prompt_filename)
 
     note_id = add_note(
@@ -555,10 +565,12 @@ def create_flashcard(
         "local_audio_path": str(local_audio_path),
         "tts_provider": tts_config.provider,
         "tts_model": tts_config.model,
+        "japanese_tts": japanese_tts,
     }
     if japanese_prompt:
         result["japanese_prompt"] = japanese_prompt
         result["english_prompt"] = english_prompt
+        result["japanese_prompt_tts"] = japanese_prompt_tts
         result["audio_prompt_file"] = audio_prompt_filename
     return result
 
@@ -589,6 +601,8 @@ def main() -> None:
         notes = str(data.get("notes", "") or "")
         japanese_prompt = str(data.get("japanese_prompt", "") or "")
         english_prompt = str(data.get("english_prompt", "") or "")
+        japanese_tts = str(data.get("japanese_tts", "") or "")
+        japanese_prompt_tts = str(data.get("japanese_prompt_tts", "") or "")
         deck_name = str(data.get("deck", DECK_NAME) or DECK_NAME)
         raw_tts_provider = data.get("tts_provider")
         raw_tts_model = data.get("tts_model")
@@ -612,6 +626,8 @@ def main() -> None:
                 "tags": tags,
                 "japanese_prompt": japanese_prompt,
                 "english_prompt": english_prompt,
+                "japanese_tts": japanese_tts,
+                "japanese_prompt_tts": japanese_prompt_tts,
                 "tts_provider": tts_provider,
                 "tts_model": tts_model,
             },
@@ -625,6 +641,8 @@ def main() -> None:
             deck_name=deck_name,
             japanese_prompt=japanese_prompt,
             english_prompt=english_prompt,
+            japanese_tts=japanese_tts,
+            japanese_prompt_tts=japanese_prompt_tts,
             tts_provider=tts_provider,
             tts_model=tts_model,
         )
