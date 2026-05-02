@@ -141,6 +141,8 @@ You need to create a Note Type with the exact name and fields that `flashgen` ex
    - `English Prompt`
    - `Audio Prompt`
 
+The `_tts` JSON fields are synthesis-only inputs. They are used to generate the embedded audio but are not stored in separate Anki note fields, so the note type stays exactly the same.
+
 ### Add Card Templates
 
 Still in the Note Type editor, click **Cards** and set up three templates:
@@ -272,6 +274,7 @@ For **Standard cards**, ChatGPT outputs JSON like:
 ```json
 {
   "japanese": " 彼[かれ]はやっとのことで 怒[いか]りを 抑[おさ]えた。",
+  "japanese_tts": "彼はやっとのことで怒りを抑えた。",
   "english": "He finally managed to hold back his anger.",
   "notes": "やっとのことで: barely, with great effort\n 抑[おさ]える: to hold back, to suppress",
   "tags": ["auto", "jp", "conversation"]
@@ -296,13 +299,17 @@ For **Response cards**, ChatGPT will first ask about (or propose) a situational 
 ```json
 {
   "japanese": "スティーブ・ 斉[さい] 藤[とう]で 予[よ] 約[やく]しております。",
+  "japanese_tts": "スティーブ・斉藤で予約しております。",
   "english": "I have a reservation under the name Steve Saito.",
   "notes": " 予[よ] 約[やく]: reservation\nしております: polite form of している",
   "tags": ["auto", "jp", "hotel"],
   "japanese_prompt": "ご 予[よ] 約[やく]のお 名[な] 前[まえ]を 頂[ちょう] 戴[だい]してもよろしいでしょうか。",
-  "english_prompt": "May I have the name under which your reservation was made?"
+  "english_prompt": "May I have the name under which your reservation was made?",
+  "japanese_prompt_tts": "ご予約のお名前を頂戴してもよろしいでしょうか。"
 }
 ```
+
+`japanese_tts` and `japanese_prompt_tts` are plain Japanese strings meant only for synthesis. They let ChatGPT swap just the risky kanji to hiragana when a TTS engine would likely misread a name, jukujikun, classical expression, or rare compound, while `japanese` and `japanese_prompt` remain fully annotated for Anki display.
 
 > **Important:** Anki must be open and running on the same computer where flashgen is running. AnkiConnect only listens locally on `127.0.0.1:8765`.
 
@@ -329,14 +336,16 @@ The card appears in Anki immediately, complete with TTS audio.
   "notes":           "string (optional — use word[reading] format for furigana in definitions)",
   "tags":            ["list", "of", "tags"],
   "deck":            "string (optional — overrides the configured deck)",
+  "japanese_tts":    "string (optional — plain Japanese text used for TTS; falls back to stripped japanese when omitted)",
   "japanese_prompt": "string (optional — situational prompt in Japanese, annotated as kanji[reading])",
   "english_prompt":  "string (optional — English version of the situational prompt)",
+  "japanese_prompt_tts": "string (optional — plain Japanese text used for prompt TTS; falls back to stripped japanese_prompt when omitted)",
   "tts_provider":    "string (optional — openai or gemini; defaults to gemini when both TTS fields are omitted)",
   "tts_model":       "string (optional — provider-specific TTS model id such as gemini-3.1-flash-tts-preview, gemini-2.5-flash-preview-tts, or gpt-4o-mini-tts; must be provided together with tts_provider)"
 }
 ```
 
-At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` must be provided together or not at all. `tts_provider` and `tts_model` must also be provided together or not at all. If both TTS fields are omitted, FlashGen defaults to Gemini TTS.
+At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` must be provided together or not at all. `tts_provider` and `tts_model` must also be provided together or not at all. If `japanese_tts` or `japanese_prompt_tts` is omitted, FlashGen falls back to the corresponding display field with furigana markup stripped. If both TTS provider fields are omitted, FlashGen defaults to Gemini TTS.
 
 ### Output (JSON to stdout)
 
@@ -352,15 +361,17 @@ At least one of `japanese` or `english` is required. `japanese_prompt` and `engl
   "tags":             ["..."],
   "tts_provider":     "gemini",
   "tts_model":        "gemini-3.1-flash-tts-preview",
+  "japanese_tts":     "...",
   "audio_file":       "filename.wav",
   "local_audio_path": "anki_audio_out/filename.wav",
   "japanese_prompt":  "... (only present for Response cards)",
   "english_prompt":   "... (only present for Response cards)",
+  "japanese_prompt_tts": "... (only present for Response cards)",
   "audio_prompt_file": "filename.wav (only present for Response cards)"
 }
 ```
 
-When Gemini TTS is used, `audio_file` and `audio_prompt_file` end in `.wav`. When OpenAI TTS is used, they end in `.mp3`.
+The returned `japanese` and `japanese_prompt` fields are the display text for Anki and contain FlashGen-normalized furigana. The returned `_tts` fields are the plain Japanese strings actually sent to the TTS engine. When Gemini TTS is used, `audio_file` and `audio_prompt_file` end in `.wav`. When OpenAI TTS is used, they end in `.mp3`.
 
 ---
 

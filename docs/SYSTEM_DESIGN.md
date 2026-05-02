@@ -51,7 +51,7 @@ CLI flow:
 1. User copies JSON from ChatGPT.
 2. `jpflash` pipes clipboard contents into `flashgen.py`.
 3. `flashgen.py` repairs/parses JSON and calls `create_flashcard(...)`.
-4. The engine fills missing translation fields, normalizes furigana, resolves the TTS provider/model, generates audio, stores media through AnkiConnect, creates the Anki note, and prints structured JSON.
+4. The engine fills missing translation fields, normalizes furigana for display, resolves TTS proxy text for synthesis, resolves the TTS provider/model, generates audio, stores media through AnkiConnect, creates the Anki note, and prints structured JSON.
 
 MCP/server flow:
 
@@ -75,14 +75,16 @@ Input JSON:
   "notes":           "string (optional; use word[reading] format for furigana in definitions)",
   "tags":            ["list", "of", "tags"],
   "deck":            "string (optional; defaults to configured deck)",
+  "japanese_tts":    "string (optional; plain Japanese text used for TTS; falls back to stripped japanese when omitted)",
   "japanese_prompt": "string (optional; situational prompt in Japanese, annotated as kanji[reading])",
   "english_prompt":  "string (optional; English version of the situational prompt)",
+  "japanese_prompt_tts": "string (optional; plain Japanese text used for prompt TTS; falls back to stripped japanese_prompt when omitted)",
   "tts_provider":    "string (optional; openai or gemini)",
   "tts_model":       "string (optional; provider-specific TTS model id)"
 }
 ```
 
-At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` describe the situational prompt for Response cards and should be provided together or omitted together. `tts_provider` and `tts_model` should also be provided together or omitted together. If both TTS fields are omitted, the engine defaults to Gemini TTS.
+At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` describe the situational prompt for Response cards and should be provided together or omitted together. `tts_provider` and `tts_model` should also be provided together or omitted together. The `_tts` fields are synthesis-only plain Japanese strings supplied by the LLM; if they are omitted, the engine falls back to the corresponding display field with furigana markup stripped. If both TTS provider fields are omitted, the engine defaults to Gemini TTS.
 
 FlashGen result JSON:
 
@@ -98,15 +100,17 @@ FlashGen result JSON:
   "tags":              ["..."],
   "tts_provider":      "gemini",
   "tts_model":         "gemini-3.1-flash-tts-preview",
+  "japanese_tts":      "...",
   "audio_file":        "filename.wav",
   "local_audio_path":  "anki_audio_out/filename.wav",
   "japanese_prompt":   "... (only present for Response cards)",
   "english_prompt":    "... (only present for Response cards)",
+  "japanese_prompt_tts": "... (only present for Response cards)",
   "audio_prompt_file": "filename.wav (only present for Response cards)"
 }
 ```
 
-The returned `japanese` and `japanese_prompt` fields contain FlashGen-normalized furigana. `audio_file` and `audio_prompt_file` are the filenames stored in Anki media. `local_audio_path` is the local generation path for the primary response audio. Gemini output is stored as `.wav`; OpenAI output is stored as `.mp3`.
+The returned `japanese` and `japanese_prompt` fields contain FlashGen-normalized furigana for display. The returned `_tts` fields are the resolved plain Japanese strings actually synthesized into audio. `audio_file` and `audio_prompt_file` are the filenames stored in Anki media. `local_audio_path` is the local generation path for the primary response audio. Gemini output is stored as `.wav`; OpenAI output is stored as `.mp3`. No extra Anki note fields are required because `_tts` values are not stored separately on the note.
 
 ## Anki Runtime
 
