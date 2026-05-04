@@ -13,7 +13,19 @@ class TTSConfigurationTests(unittest.TestCase):
 
         self.assertEqual(tts_config.provider, "gemini")
         self.assertEqual(tts_config.model, "gemini-3.1-flash-tts-preview")
+        self.assertEqual(tts_config.voice, "Algenib")
         self.assertEqual(tts_config.extension, ".wav")
+
+    def test_resolve_tts_config_uses_openai_male_sounding_default_voice(self):
+        tts_config = flashgen.resolve_tts_config(
+            tts_provider="openai",
+            tts_model="gpt-4o-mini-tts",
+        )
+
+        self.assertEqual(tts_config.provider, "openai")
+        self.assertEqual(tts_config.model, "gpt-4o-mini-tts")
+        self.assertEqual(tts_config.voice, "onyx")
+        self.assertEqual(tts_config.extension, ".mp3")
 
     def test_create_flashcard_defaults_to_gemini_without_openai_key(self):
         captured = {}
