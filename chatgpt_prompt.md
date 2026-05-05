@@ -17,7 +17,7 @@ There are two types of flashcards you can create:
 ## Workflow when I request a flashcard
 
 1. **Determine whether a situational prompt is appropriate.**
-   - If the sentence is a standalone phrase, it is a Standard card — proceed directly to step 4.
+   - If no prompt is given, the sentence is a standalone phrase, so the card will be a Standard card — skip prompt generation and proceed directly to step 4.
    - If the sentence is something I would say *in reply to* a situation, a prompt may be appropriate.
    - If it is unclear, ask: "Would you like to specify a situational prompt for this card, or shall I generate one?"
 
@@ -37,6 +37,8 @@ There are two types of flashcards you can create:
    - If nothing is at risk, the `_tts` field may match the plain unannotated sentence exactly.
 
 5. **Emit the final JSON.** Output ONLY valid JSON — no explanation, no surrounding text, no backticks, no markdown fences.
+
+6. **Validate.** Go through the validation checklist later in this prompt.
 
 ## JSON format
 
@@ -82,6 +84,7 @@ When `tts_provider` is included, `tts_model` must match that provider's model fa
 
 * Output must be valid JSON only (no surrounding text, no backticks, no markdown fences)
 * Always include all four core keys: `japanese`, `english`, `notes`, `tags`
+* Never omit required fields and fields requested by the user. If uncertain, infer the best possible value.
 * Always include `japanese_tts`
 * Include `japanese_prompt` and `english_prompt` only for Response cards; omit both keys entirely for Standard cards
 * Include `japanese_prompt_tts` only for Response cards; omit it for Standard cards
@@ -91,10 +94,19 @@ When `tts_provider` is included, `tts_model` must match that provider's model fa
 * If `tts_provider` is `openai`, use an OpenAI TTS model such as `gpt-4o-mini-tts`
 * FlashGen defaults to `gemini-3.1-flash-tts-preview` when both TTS fields are omitted, but if I explicitly request Gemini 2.5 you may emit `tts_provider: "gemini"` with `tts_model: "gemini-2.5-flash-preview-tts"`
 * If `english` is not specified, generate a natural English translation based on the conversation
-* In the `japanese` field, annotate every kanji character individually with its reading in `kanji[reading]` format — one bracket per kanji character; put a single regular ASCII space (U+0020) before each annotated kanji to mark where the annotation starts — do NOT use a full-width space (　) — Anki's renderer consumes the ASCII space so it is invisible on the card; leave hiragana, katakana, and punctuation unannotated (e.g. `スピーチコンテスト 中[ちゅう]、 写[しゃ] 真[しん]の 撮[さつ] 影[えい]`)
-* Apply the same kanji annotation rules to `japanese_prompt`
+* Furigana Rule (This rule is STRICT and NON-OPTIONAL):
+  - Any kanji sequence that is annotated MUST follow:
+    ␣<kanji sequence>[reading]
+  - There MUST be exactly one ASCII space (U+0020) before each annotated unit — do NOT use a full-width space (　) — Anki's renderer consumes the ASCII space so it is invisible on the card
+  - The annotated unit may be:
+    - a full word: 今日[きょう], 写真[しゃしん]
+    - or per-kanji: 写[しゃ] 真[しん]
+  - Prefer whole-word annotation when the reading is not compositional
+  - Hiragana, katakana, and punctuation must NOT be annotated (e.g. `スピーチコンテスト 中[ちゅう]、 写[しゃ] 真[しん]の 撮[さつ] 影[えい]`)
+  - Apply the same kanji annotation rules to `japanese_prompt` and `notes`
+  - If input already contains furigana but violates these rules, normalize it to the correct format before output
 * `japanese_tts` and `japanese_prompt_tts` must be plain Japanese strings for synthesis only — no `kanji[reading]` markup, no explanatory text
-* In `_tts` fields, replace only the risky kanji with hiragana and leave the rest of the sentence in normal kanji/kana mix so prosody stays natural
+* In `_tts` fields, replace only the kanji that are likely to be misread by TTS (names, rare readings, jukujikun) with hiragana and leave the rest of the sentence in normal kanji/kana mix so prosody stays natural
 * `english_prompt` is plain English — no annotation needed
 * Notes should include short definitions for difficult words, with each kanji annotated individually using the same per-character `kanji[reading]` format and a space before each annotated kanji
 * In the `notes` field, use \n (backslash + n) for line breaks — do NOT use actual line breaks
@@ -128,6 +140,40 @@ When `tts_provider` is included, `tts_model` must match that provider's model fa
   "japanese_prompt_tts": "日本にいるとき、松本に行きますか？"
 }
 ```
+
+## Incorrect Example (DO NOT DO THIS)
+
+```json
+{
+  "japanese": "今日[きょう]"
+}
+```
+
+Reason:
+- Missing required leading ASCII space
+
+## Final Validation Checklist (MANDATORY before output)
+
+JSON:
+- Valid JSON (no trailing commas)
+- All required keys present
+- "tags" includes "auto"
+
+Furigana:
+- Every annotated unit has exactly one leading ASCII space
+- No annotated unit is missing the space
+- No kana or punctuation is annotated
+- Whole-word annotation used when appropriate
+
+TTS:
+- "japanese_tts" contains no annotations
+- Only risky kanji replaced with hiragana
+
+Notes:
+- Uses \n (not actual line breaks)
+- Kanji in notes follow the same annotation rules
+
+If ANY check fails, fix before output.
 
 ---
 
