@@ -34,9 +34,11 @@ The guiding architecture is:
 10. Put the service behind public HTTPS at `mcp.ssaito.net`.
 11. Add OAuth-compatible access through Cloudflare.
 12. Register and test the custom connector in Claude, then enable it in the `flashgen` project.
-13. Move reusable engine code from `flashgen.py` into focused package modules.
-14. Add deployment docs/assets for Lightsail from the same repo checkout.
-15. Harden configuration, errors, logging, and runtime health checks.
+13. Build the Lightsail Anki runtime with Anki, AnkiConnect, `Xvfb`, persistent profile storage, and temporary private UI access.
+14. Containerize the Anki runtime separately from the FlashGen MCP service.
+15. Add deployment docs/assets for Lightsail from the same repo checkout.
+16. Move reusable engine code from `flashgen.py` into focused package modules.
+17. Harden configuration, errors, logging, and runtime health checks.
 
 ## Claude Remote MCP Work
 
@@ -77,11 +79,44 @@ Deployment work should add source-controlled instructions or files for:
 
 - cloning `/opt/flashgen`
 - syncing dependencies with `uv`
+- building the `anki-headless` container
+- building the `flashgen-mcp` container
 - configuring environment variables
 - running `flashgen_mcp.app:app`
+- starting Anki under `Xvfb`
+- installing and verifying AnkiConnect
+- temporarily exposing the Anki UI for owner login/setup over a private path only
 - restarting through systemd
 - proxying through nginx if needed
-- making AnkiConnect reachable from the server process
+- making AnkiConnect reachable from the FlashGen process without exposing port `8765` publicly
+
+## Anki Runtime Work
+
+Anki and AnkiConnect will run on the Lightsail instance. Because Anki requires a display, the deployment should run it under `Xvfb` inside an `anki-headless` container. The container should persist the Anki profile, collection, add-ons, media, and login state in Docker volumes so a reboot can restart Anki without manual login.
+
+Initial setup tasks:
+
+1. Build or choose a base image with Anki, AnkiConnect, `Xvfb`, and enough Qt/runtime libraries.
+2. Start Anki with a virtual display such as `DISPLAY=:99`.
+3. Provide temporary private UI access for setup, preferably through SSH or Tailscale-only VNC/noVNC.
+4. Log in to AnkiWeb, sync, and verify the target deck/model.
+5. Confirm Anki retains credentials in the persisted profile after container restart and host reboot.
+6. Disable or remove temporary UI exposure after setup unless needed for maintenance.
+
+Networking tasks:
+
+- Keep AnkiConnect on port `8765` private.
+- Use the existing Tailscale installation for private administrative access and, if chosen, FlashGen-to-AnkiConnect traffic.
+- Decide whether FlashGen reaches AnkiConnect through a Tailscale IP, private Docker network, host networking, or a locked-down localhost bridge.
+- Configure `ANKI_CONNECT_URL` from that decision.
+- Add firewall rules so Cloudflare/nginx expose only the public MCP endpoint and health endpoint, not AnkiConnect.
+
+Operational tasks:
+
+- Add systemd units or a compose-managed service so both containers restart after reboot.
+- Add health checks for Anki process, AnkiConnect response, deck existence, model existence, and test media write.
+- Document recovery steps for failed sync, expired Anki login, broken display, or missing AnkiConnect add-on.
+- Keep the container split because future MCP services will share this server, and Anki's Qt/display requirements should not leak into the FlashGen MCP runtime.
 
 ## Cloudflare and Domain Work
 
@@ -100,6 +135,19 @@ Auth work:
 - Require OAuth login before MCP tool calls.
 - Avoid exposing provider API keys or AnkiConnect credentials to Claude.
 - Revisit ChatGPT and Gemini after Claude works end to end because each provider's MCP connector behavior differs.
+
+## Development Bootstrap
+
+The next development session can reasonably happen on the Lightsail instance because the work depends on real server services: Docker, systemd, nginx, Tailscale, Anki, AnkiConnect, and Cloudflare edge behavior.
+
+Bootstrap flow:
+
+1. SSH into the Lightsail instance.
+2. Clone the repo into `/opt/flashgen`.
+3. Run Codex from `/opt/flashgen`.
+4. Implement runtime/deployment assets in the repo, not as untracked one-off server edits.
+5. Commit and push changes back to GitHub.
+6. Pull/redeploy from the committed source-controlled assets.
 
 ## Task Tracking
 

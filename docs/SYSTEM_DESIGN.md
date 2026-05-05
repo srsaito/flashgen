@@ -154,11 +154,25 @@ ChatGPT and Gemini compatibility should be revisited after the Claude path works
 
 FlashGen depends on AnkiConnect being reachable. The default local URL is `http://127.0.0.1:8765`, but server deployments should treat this as configuration rather than source code.
 
+On Lightsail, Anki and AnkiConnect will run on the server. Anki does not provide a supported headless mode, so the deployment will run Anki under `Xvfb` to provide a virtual X display. This keeps Anki's Qt runtime satisfied while allowing the service to run unattended.
+
+The server-side Anki runtime should be isolated from the FlashGen MCP service:
+
+- `anki-headless` container: runs Anki, AnkiConnect, `Xvfb`, and the temporary UI access tooling needed for setup or recovery.
+- `flashgen-mcp` container: runs the FlashGen MCP server and talks to AnkiConnect over HTTP.
+- Persistent Docker volumes: store the Anki profile, collection, add-ons, media, and login/session state so reboots do not require re-authentication.
+
+Initial setup needs a temporary way to access the Anki UI so the owner can log in, install or verify AnkiConnect, sync, and confirm the deck/model configuration. That UI exposure should be temporary and private, preferably through SSH or Tailscale-only VNC/noVNC access. Anki should retain credentials in its profile after login, so normal reboot recovery should only need to restart the container and virtual display.
+
+AnkiConnect must not be exposed on the public Internet. Tailscale is already installed on the server, so port `8765` should be reachable only over the Tailscale/private network path needed by FlashGen and administrative testing. The production MCP endpoint is public through Cloudflare, but the AnkiConnect control plane remains private.
+
 The runtime strategy is:
 
-1. Prefer a service manager to keep Anki or the AnkiConnect runtime available in deployment environments.
-2. Add a runtime health/start helper only as a fallback for local development or recovery.
-3. Fail with clear structured errors when AnkiConnect is unavailable, the deck is missing, or the note type/fields are not configured.
+1. Use Docker and systemd to keep both the `anki-headless` and `flashgen-mcp` containers running after reboot.
+2. Keep the Anki profile and media on persistent volumes, not inside ephemeral containers.
+3. Bind or firewall AnkiConnect so it is reachable only from the intended private network path, not from the Internet.
+4. Add health checks for AnkiConnect, deck existence, model existence, and media writes.
+5. Fail with clear structured errors when AnkiConnect is unavailable, the deck is missing, or the note type/fields are not configured.
 
 ## Lightsail Deployment Model
 
@@ -180,7 +194,21 @@ uv sync --frozen
 uv run uvicorn flashgen_mcp.app:app --host 0.0.0.0 --port 8000
 ```
 
-Production service files should run the same app from the same repo checkout, for example `flashgen_mcp.app:app`. Future systemd/nginx assets should live in this repository under `deploy/` or `docs/deployment/` so the Lightsail instance can be recreated from source-controlled instructions.
+That direct `uvicorn` command is useful for early smoke testing. The production shape should move to source-controlled Docker and systemd assets:
+
+```text
+/opt/flashgen
+  docker-compose.yml or compose.yaml
+  deploy/
+    anki-headless/
+    flashgen-mcp/
+    nginx/
+    systemd/
+```
+
+Production service files should run containers built from the same repo checkout. Future systemd/nginx/Docker assets should live in this repository under `deploy/` or `docs/deployment/` so the Lightsail instance can be recreated from source-controlled instructions.
+
+Running Codex on the Lightsail instance is appropriate for server-specific development because it can inspect the real OS, Docker, systemd, nginx, Tailscale, Anki, and Cloudflare tunnel/access behavior. Source edits made there should still be committed and pushed through GitHub so the instance is not the only record of the deployment.
 
 ## Configuration
 
@@ -191,9 +219,12 @@ Initial settings:
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
 - `ANKI_CONNECT_URL`
+- `ANKI_CONNECT_HOST`
+- `ANKI_CONNECT_PORT`
 - `FLASHGEN_DECK_NAME`
 - `FLASHGEN_MODEL_NAME`
 - `FLASHGEN_TEXT_MODEL`
+- `DISPLAY`
 
 The existing constants in `flashgen.py` can remain as defaults while the MCP service is being integrated. Translation continues to use OpenAI when a field must be filled in, while TTS can route to either Gemini or OpenAI per request.
 
@@ -232,6 +263,6 @@ As the `flashgen_core` package emerges, tests should move with the extracted mod
 ## Open Design Notes
 
 - The MCP card-creation endpoint still needs a concrete request/response schema.
-- Deployment must confirm whether AnkiConnect runs directly on Lightsail or is reached through a private tunnel or other network path.
+- Deployment must confirm the exact Docker networking shape for AnkiConnect: Tailscale IP, private Docker network, host networking, or a combination that keeps port `8765` off the public Internet.
 - Remote MCP auth must choose between Cloudflare Access and Cloudflare's MCP OAuth tooling before public connector registration.
 - The `flashgen.py` constants should become shared settings before the MCP endpoint creates real cards.
