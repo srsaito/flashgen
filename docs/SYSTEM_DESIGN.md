@@ -9,6 +9,8 @@ FlashGen is a single repository with one card-generation engine and two front do
 
 The MCP layer should be a thin adapter over the FlashGen engine. Improvements to translation behavior, furigana handling, audio generation, duplicate checking, field mapping, and Anki note creation should benefit both the MacBook CLI workflow and the Lightsail-hosted server workflow.
 
+The primary hosted LLM workflow is now Claude, using a Claude Project named `flashgen`. The project carries the FlashGen prompt context through its `instructions.md` and `system_prompt.md` files. ChatGPT and Gemini remain useful compatibility targets, but they are no longer the lead design surface for the remote MCP flow.
+
 ## Repository Model
 
 `flashgen` is the source of truth for both CLI and MCP/server development.
@@ -62,9 +64,21 @@ MCP/server flow:
 
 The server must not maintain a second copy of card schema rules. The CLI and MCP request models should converge on the same field names and behavior.
 
+Claude Project flow:
+
+1. User practices Japanese with Claude in the `flashgen` project.
+2. When a phrase should become a card, the user asks Claude to draft the FlashGen JSON using the project context.
+3. Claude returns JSON in the established FlashGen contract.
+4. User inspects the JSON and iterates with Claude until the fields, furigana, prompt text, tags, and TTS proxy text look correct.
+5. User explicitly asks Claude to create the Anki card.
+6. Claude calls the remote FlashGen MCP tool with the reviewed JSON.
+7. FlashGen validates the payload, creates the Anki note and audio through the shared engine, and returns the structured result.
+
+This workflow keeps the destructive/write action behind an explicit user request. JSON generation and review happen in normal Claude conversation; Anki mutation happens only through the MCP tool call after confirmation.
+
 ## JSON Contract
 
-The LLM-facing input contract is the JSON object copied from ChatGPT and consumed by the CLI today. The MCP card-creation endpoint should accept the same semantic fields, even if the transport wrapper differs.
+The LLM-facing input contract is the JSON object drafted by Claude in the `flashgen` project or copied from another LLM client and consumed by the CLI today. The MCP card-creation endpoint should accept the same semantic fields, even if the transport wrapper differs.
 
 Input JSON:
 
@@ -111,6 +125,30 @@ FlashGen result JSON:
 ```
 
 The returned `japanese` and `japanese_prompt` fields contain FlashGen-normalized furigana for display. The returned `_tts` fields are the resolved plain Japanese strings actually synthesized into audio. `audio_file` and `audio_prompt_file` are the filenames stored in Anki media. `local_audio_path` is the local generation path for the primary response audio. Gemini output is stored as `.wav`; OpenAI output is stored as `.mp3`. No extra Anki note fields are required because `_tts` values are not stored separately on the note.
+
+## Remote MCP Access and Auth
+
+Remote MCP access must be designed for Claude first. Anthropic's remote custom connectors are configured through the user's Claude account and brokered from Anthropic's cloud infrastructure across Claude surfaces, including claude.ai, Claude Desktop, Cowork, and mobile apps. That means the production FlashGen MCP server must be reachable over public HTTPS from Anthropic infrastructure. A private Tailscale-only endpoint is useful for development testing, but it is not sufficient for Claude remote connectors.
+
+The target production URL should be stable and user-owned, for example:
+
+```text
+https://mcp.ssaito.net/mcp
+```
+
+Claude connector registration should use this URL as a custom remote MCP connector. For individual Claude Pro/Max usage, the connector can be added under Customize > Connectors. For Team/Enterprise usage, an owner would add it at the organization level and users would connect it individually. Once registered and authenticated, the connector can be enabled in the `flashgen` project and used from supported Claude surfaces.
+
+Authentication should use OAuth-compatible remote MCP auth rather than a shared static bearer token. Cloudflare is the preferred edge/auth layer because it can provide public HTTPS, DNS, certificate management, access policy, logging, and an OAuth-facing path for remote MCP clients. The first implementation should prefer Cloudflare Access or Cloudflare's MCP OAuth tooling in front of the Python service instead of hand-rolling OAuth in FastAPI.
+
+The initial auth policy should be intentionally narrow:
+
+- allow only the owner's account during development
+- require OAuth login before tool access
+- expose only the FlashGen tools needed for card validation and creation
+- log tool calls without storing secret API keys or unnecessary card content
+- rate-limit card creation to protect paid TTS and translation providers
+
+ChatGPT and Gemini compatibility should be revisited after the Claude path works. Public LLM clients generally need an Internet-facing MCP server, and authenticated clients need OAuth or bearer-token compatible auth, but each provider's remote MCP surface differs. FlashGen should avoid provider-specific assumptions in the core engine and keep transport/auth concerns in the MCP/deployment layer.
 
 ## Anki Runtime
 
@@ -195,4 +233,5 @@ As the `flashgen_core` package emerges, tests should move with the extracted mod
 
 - The MCP card-creation endpoint still needs a concrete request/response schema.
 - Deployment must confirm whether AnkiConnect runs directly on Lightsail or is reached through a private tunnel or other network path.
+- Remote MCP auth must choose between Cloudflare Access and Cloudflare's MCP OAuth tooling before public connector registration.
 - The `flashgen.py` constants should become shared settings before the MCP endpoint creates real cards.
