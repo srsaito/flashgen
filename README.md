@@ -252,12 +252,12 @@ Click **Add Card** to create a third template. The `{{#Japanese Prompt}}` wrappe
 
 ### Step 1 — Create new project
 
-In the Claude UI create a new project (e.g., `flashgen`), and for the project Instruction field insert the prompt in the `instructions.md` file. Drag the `chatgpt_prompt.md` file into the project Files. Using the project structure as a harness helps the LLM respect the instructions, which is critical for getting furigana embedding right.
+In the Claude UI create a new project (e.g., `flashgen`), and for the project Instruction field insert the prompt in the `instructions.md` file. Drag the `system_prompt.md` file into the project Files. Using the project structure as a harness helps the LLM respect the instructions, which is critical for getting furigana embedding right.
 
 
 ### Alt Step 1 — Load the system prompt
 
-If you don't want to use projects, you can try getting the LLM to remember the prompt. Open `chatgpt_prompt.md`, copy the prompt block, and paste it into a new ChatGPT conversation. You can ask ChatGPT to remember it for future sessions:
+If you don't want to use projects, you can try getting the LLM to remember the prompt. Open `system_prompt.md`, copy the prompt block, and paste it into a new ChatGPT conversation. You can ask ChatGPT to remember it for future sessions:
 
 > *"Please remember this flashcard prompt for our future conversations."*
 
