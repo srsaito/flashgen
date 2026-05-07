@@ -9,7 +9,7 @@ The guiding architecture is:
 - one repository
 - one card-generation engine
 - two front doors: CLI and MCP/server
-- one primary hosted LLM workflow: Claude Project plus remote MCP connector
+- one primary hosted LLM workflow: Claude Project plus a custom remote MCP connector registered on an individual Claude Free/Pro/Max account
 
 ## Current State
 
@@ -19,6 +19,7 @@ The guiding architecture is:
 - `docs/SYSTEM_DESIGN.md` documents the target architecture and deployment model.
 - The Claude Project named `flashgen` exists and contains the project prompt files `instructions.md` and `system_prompt.md`.
 - The intended user workflow is conversation-first: Claude drafts FlashGen JSON, the user reviews and iterates, then Claude calls MCP only when the user explicitly asks to create the Anki card.
+- The plan of record is individual Claude account setup only. Team/Enterprise organization connector administration is out of scope for the first end-to-end system.
 
 ## Milestones
 
@@ -33,7 +34,7 @@ The guiding architecture is:
 9. Add remote MCP transport support suitable for Claude custom connectors, preferably Streamable HTTP at `/mcp`.
 10. Put the service behind public HTTPS at `mcp.ssaito.net`.
 11. Add OAuth-compatible access through Cloudflare.
-12. Register and test the custom connector in Claude, then enable it in the `flashgen` project.
+12. Register and test the custom connector from Claude web or Claude Desktop on the owner's individual Claude account, then enable it in the `flashgen` project.
 13. Build the Lightsail Anki runtime with Anki, AnkiConnect, `Xvfb`, persistent profile storage, and temporary private UI access.
 14. Containerize the Anki runtime separately from the FlashGen MCP service.
 15. Add deployment docs/assets for Lightsail from the same repo checkout.
@@ -43,6 +44,20 @@ The guiding architecture is:
 ## Claude Remote MCP Work
 
 Claude is the lead integration target. Anthropic remote custom connectors are reached from Anthropic's cloud infrastructure, not from the user's local device, so the production MCP endpoint must be publicly reachable over HTTPS. Tailscale remains useful for local development and private smoke tests, but it cannot be the only connectivity path for Claude.
+
+The first supported account model is individual Claude Free/Pro/Max. The setup flow to validate and document is:
+
+1. Open Claude web or Claude Desktop.
+2. Navigate to Customize > Connectors.
+3. Click `+` and choose `Add custom connector`.
+4. Enter the FlashGen remote MCP URL, preferably `https://mcp.ssaito.net/mcp`.
+5. Use Advanced settings only if OAuth client ID/secret configuration is required by the deployed auth layer.
+6. Click `Add`.
+7. Click `Connect` and complete authentication if prompted.
+8. In the `flashgen` Claude Project chat, enable the FlashGen connector from the `+` / Connectors or Search and tools menu.
+9. Open Claude mobile and confirm the already-registered connector is available there.
+
+Claude mobile is a supported use surface after registration, but it is not a configuration surface. The iPhone app can use remote MCP connectors that were already added through the Claude account, but it cannot add a new custom MCP server directly.
 
 Claude-facing tools should start small:
 
@@ -55,10 +70,14 @@ Connector setup tasks:
 
 1. Publish the MCP server at a stable URL such as `https://mcp.ssaito.net/mcp`.
 2. Configure OAuth-compatible authentication at the edge, preferably with Cloudflare.
-3. Add the URL as a custom connector in Claude's connector settings.
-4. Authenticate the connector as the allowed user.
+3. Add the URL as a custom connector in Claude web or Claude Desktop under Customize > Connectors.
+4. Authenticate the connector as the allowed individual user.
 5. Enable the connector in the `flashgen` Claude Project.
-6. Test the full flow from desktop and mobile Claude clients.
+6. Test `validate_flashcard` from Claude web or desktop.
+7. Test `create_flashcard` from Claude web or desktop after explicit user confirmation.
+8. Test the already-registered connector from Claude mobile.
+
+MarkItDown can be used as a learning or smoke-test reference, but not as a direct public-hosting pattern. Microsoft's `markitdown-mcp` exposes a single `convert_to_markdown(uri)` tool and supports Streamable HTTP/SSE endpoints when run with `markitdown-mcp --http --host 127.0.0.1 --port 3001`. Its own README states that it is intended for local trusted agents, binds to localhost by default, and does not support authentication. Do not expose MarkItDown directly to the public Internet. If it is used before FlashGen MCP is ready, keep it local in Claude Desktop or place it behind an authenticated wrapper with restricted URI schemes and network access.
 
 ## Near-Term Refactor Path
 
@@ -134,7 +153,8 @@ Auth work:
 - Start with a single allowed user account.
 - Require OAuth login before MCP tool calls.
 - Avoid exposing provider API keys or AnkiConnect credentials to Claude.
-- Revisit ChatGPT and Gemini after Claude works end to end because each provider's MCP connector behavior differs.
+- Verify connector registration from Claude web or Claude Desktop before testing on Claude mobile.
+- Revisit ChatGPT and Gemini after Claude individual-account usage works end to end because each provider's MCP connector behavior differs.
 
 ## Development Bootstrap
 

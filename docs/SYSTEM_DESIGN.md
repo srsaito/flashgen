@@ -9,7 +9,7 @@ FlashGen is a single repository with one card-generation engine and two front do
 
 The MCP layer should be a thin adapter over the FlashGen engine. Improvements to translation behavior, furigana handling, audio generation, duplicate checking, field mapping, and Anki note creation should benefit both the MacBook CLI workflow and the Lightsail-hosted server workflow.
 
-The primary hosted LLM workflow is now Claude, using a Claude Project named `flashgen`. The project carries the FlashGen prompt context through its `instructions.md` and `system_prompt.md` files. ChatGPT and Gemini remain useful compatibility targets, but they are no longer the lead design surface for the remote MCP flow.
+The primary hosted LLM workflow is now Claude, using a Claude Project named `flashgen`. The project carries the FlashGen prompt context through its `instructions.md` and `system_prompt.md` files. The plan of record is an individual Claude Free/Pro/Max account using a custom remote MCP connector added from Claude web or Claude Desktop. Team/Enterprise administration is intentionally out of scope for the first end-to-end system. ChatGPT and Gemini remain useful compatibility targets, but they are no longer the lead design surface for the remote MCP flow.
 
 ## Repository Model
 
@@ -136,7 +136,18 @@ The target production URL should be stable and user-owned, for example:
 https://mcp.ssaito.net/mcp
 ```
 
-Claude connector registration should use this URL as a custom remote MCP connector. For individual Claude Pro/Max usage, the connector can be added under Customize > Connectors. For Team/Enterprise usage, an owner would add it at the organization level and users would connect it individually. Once registered and authenticated, the connector can be enabled in the `flashgen` project and used from supported Claude surfaces.
+Claude connector registration should use this URL as a custom remote MCP connector on the owner's individual Claude account. The individual-account setup flow is:
+
+1. Open Claude web or Claude Desktop.
+2. Navigate to Customize > Connectors.
+3. Click `+` and choose `Add custom connector`.
+4. Enter the FlashGen remote MCP URL, preferably the Streamable HTTP endpoint at `https://mcp.ssaito.net/mcp`.
+5. Optionally configure OAuth client details under Advanced settings if the FlashGen edge/auth layer requires them.
+6. Click `Add`.
+7. Click `Connect` if authentication is required.
+8. In the `flashgen` project chat, use the `+` / Connectors or Search and tools menu to enable the FlashGen connector for that conversation.
+
+Once the connector is added and authenticated from Claude web or Claude Desktop, it can be used from Claude mobile. Claude mobile can use remote MCP connectors already registered through the Claude account, but it cannot add a new user-specified MCP server directly from the mobile app. This makes web/desktop registration a required setup step for the iPhone workflow.
 
 Authentication should use OAuth-compatible remote MCP auth rather than a shared static bearer token. Cloudflare is the preferred edge/auth layer because it can provide public HTTPS, DNS, certificate management, access policy, logging, and an OAuth-facing path for remote MCP clients. The first implementation should prefer Cloudflare Access or Cloudflare's MCP OAuth tooling in front of the Python service instead of hand-rolling OAuth in FastAPI.
 
@@ -148,7 +159,9 @@ The initial auth policy should be intentionally narrow:
 - log tool calls without storing secret API keys or unnecessary card content
 - rate-limit card creation to protect paid TTS and translation providers
 
-ChatGPT and Gemini compatibility should be revisited after the Claude path works. Public LLM clients generally need an Internet-facing MCP server, and authenticated clients need OAuth or bearer-token compatible auth, but each provider's remote MCP surface differs. FlashGen should avoid provider-specific assumptions in the core engine and keep transport/auth concerns in the MCP/deployment layer.
+MarkItDown is a useful reference MCP for understanding the connector flow, but it is not a production-equivalent hosted test by itself. Microsoft's `markitdown-mcp` supports STDIO, Streamable HTTP, and SSE, with local endpoints such as `http://127.0.0.1:3001/mcp` and `http://127.0.0.1:3001/sse`. Its official guidance says it is intended for local trusted agents, binds to localhost by default, and does not provide authentication. FlashGen should not copy the unsafe part of that shape by exposing an unauthenticated converter-style MCP publicly. If MarkItDown is used as a smoke test, it should either remain local in Claude Desktop or be placed behind a narrow authenticated wrapper before being exposed to Claude web.
+
+ChatGPT and Gemini compatibility should be revisited after the Claude individual-account path works. Public LLM clients generally need an Internet-facing MCP server, and authenticated clients need OAuth or bearer-token compatible auth, but each provider's remote MCP surface differs. FlashGen should avoid provider-specific assumptions in the core engine and keep transport/auth concerns in the MCP/deployment layer.
 
 ## Anki Runtime
 
