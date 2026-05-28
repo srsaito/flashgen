@@ -23,23 +23,158 @@ The guiding architecture is:
 
 ## Milestones
 
+The milestones are organized into phases. Each phase with new code follows a **TDD pattern**: write failing acceptance tests first, then implement until they pass. Phases gate on each other as described below.
+
+---
+
+### Phase 1 — Foundation (Milestones 1–4) ✅
+
+Already complete.
+
 1. Fold the early MCP scaffold and docs into the `flashgen` repo.
 2. Add `pyproject.toml` for `uv` while keeping `requirements.txt` usable for pip installs.
 3. Keep the MCP package under `src/flashgen_mcp/`.
 4. Add a health test for the MCP server scaffold.
+
+Covered by: `tests/test_health.py`, `tests/test_furigana_normalization.py`, `tests/test_tts_configuration.py`.
+
+---
+
+### Phase 2 — Schema & Validation (Milestones 5–6)
+
+**TDD step first**: write failing tests, then implement.
+
 5. Define a shared card request/result schema.
 6. Add a validation-only MCP card endpoint.
+
+**Acceptance tests** (`tests/test_card_schema.py`):
+- `CardRequest` accepts `japanese`-only input
+- `CardRequest` accepts `english`-only input
+- `CardRequest` rejects input with neither `japanese` nor `english`
+- `CardRequest` rejects `tts_provider` supplied without `tts_model` (and vice versa)
+- `CardRequest` accepts all optional fields cleanly
+
+**Acceptance tests** (`tests/test_mcp_validation.py`):
+- `POST /validate` with valid JSON → 200 with normalized fields
+- `POST /validate` with neither `japanese` nor `english` → 422 with structured error
+- `POST /validate` with partial TTS config → 422 naming the two required fields
+
+---
+
+### Phase 3 — MCP Card Creation (Milestone 7)
+
+**TDD step first**: write failing tests, then implement.  
+*Depends on Phase 2 complete.*
+
 7. Wire the MCP endpoint to the existing `flashgen.create_flashcard(...)` function.
+
+**Acceptance tests** (`tests/test_mcp_create.py`):
+- `POST /create` with valid JSON calls `create_flashcard` and returns the full result
+- `POST /create` when AnkiConnect is unreachable → structured error, not a 500
+- `POST /create` with missing TTS API key → structured error naming the missing key
+
+---
+
+### Phase 4 — Remote MCP Transport (Milestones 8–9)
+
+**TDD step first**: write failing tests, then implement.  
+*Depends on Phase 3 complete.*
+
 8. Define the Claude-facing MCP tool names, descriptions, schemas, and write-action semantics.
 9. Add remote MCP transport support suitable for Claude custom connectors, preferably Streamable HTTP at `/mcp`.
+
+**Acceptance tests** (`tests/test_mcp_transport.py`):
+- `GET /mcp` returns MCP server info listing `validate_flashcard` and `create_flashcard`
+- `POST /mcp` with `validate_flashcard` call returns a validation result
+- `create_flashcard` tool description contains a write-action warning
+- `POST /mcp` with `create_flashcard` routes correctly to the shared engine
+
+---
+
+### Phase 5 — Public HTTPS and Auth (Milestones 10–11)
+
+**TDD step first**: write integration smoke tests (skipped unless `FLASHGEN_SMOKE=1`), then deploy.  
+*Depends on Phase 4 complete.*
+
 10. Put the service behind public HTTPS at `mcp.ssaito.net`.
 11. Add OAuth-compatible access through Cloudflare.
+
+**Acceptance tests** (integration, `tests/test_smoke_https.py`):
+- `GET https://mcp.ssaito.net/health` → 200 `{"ok": true}`
+- `POST /mcp` without auth token → 401
+- `POST /mcp` with valid token → 200
+
+---
+
+### Phase 6 — Connector Registration (Milestone 12)
+
+Manual verification (Claude UI cannot be scripted).  
+*Depends on Phase 5 complete.*
+
 12. Register and test the custom connector from Claude web or Claude Desktop on the owner's individual Claude account, then enable it in the `flashgen` project.
+
+**Manual acceptance checklist**:
+- Connector registers successfully at `https://mcp.ssaito.net/mcp`
+- `validate_flashcard` and `create_flashcard` appear in the flashgen Claude Project
+- `validate_flashcard` returns a validation result from Claude chat
+- `create_flashcard` produces an Anki card end-to-end from Claude chat after explicit user confirmation
+- Connector is usable from Claude mobile after desktop registration
+
+---
+
+### Phase 7 — Anki Runtime (Milestones 13–14)
+
+**TDD step first**: write integration tests (skipped unless `ANKI_CONNECT_URL` is set), then implement.  
+*Depends on Phase 3 complete (MCP wired) and Phase 9 for final deployment.*
+
 13. Build the Lightsail Anki runtime with Anki, AnkiConnect, `Xvfb`, persistent profile storage, and temporary private UI access.
 14. Containerize the Anki runtime separately from the FlashGen MCP service.
+
+**Acceptance tests** (integration, `tests/test_anki_runtime.py`):
+- AnkiConnect ping returns `{"result": null, "error": null}`
+- Deck list includes the configured deck name
+- Card count in deck is stable across `docker compose restart` (profile persisted)
+- `flashgen-mcp` container can reach AnkiConnect over the private network
+- Health endpoint returns `{"ok": false}` when AnkiConnect is unreachable
+
+---
+
+### Phase 8 — Deployment Assets (Milestone 15)
+
+*Depends on Phase 7 (containers) and Phase 5 (HTTPS) complete.*
+
 15. Add deployment docs/assets for Lightsail from the same repo checkout.
+
+No new test file. Acceptance: `docker compose up` on a clean Lightsail clone starts both containers, all health checks pass, and the deployed service satisfies the Phase 5 smoke tests.
+
+---
+
+### Phase 9 — Engine Refactor (Milestone 16)
+
+**TDD step**: verify all existing tests are green before extraction; keep them green throughout.  
+*Depends on Phase 3 complete. Can run in parallel with Phases 5–8.*
+
 16. Move reusable engine code from `flashgen.py` into focused package modules.
+
+**Acceptance criteria**:
+- All existing tests pass after extraction
+- `flashgen.py` imports from `flashgen_core`, not local functions
+- `flashgen_mcp.app` imports from `flashgen_core`, not from `flashgen.py`
+
+---
+
+### Phase 10 — Hardening (Milestone 17)
+
+**TDD step first**: write failing tests for the error contract, then harden.  
+*Depends on Phase 9 (engine refactor) complete.*
+
 17. Harden configuration, errors, logging, and runtime health checks.
+
+**Acceptance tests** (`tests/test_error_contract.py`):
+- AnkiConnect unavailable → `{"error": "anki_unavailable", "message": "..."}` from both CLI and MCP
+- Deck missing → `{"error": "deck_missing", "message": "..."}`
+- Duplicate note → `{"error": "duplicate_note", "message": "..."}`
+- Health endpoint returns `{"ok": false, "reason": "anki_unavailable"}` when AnkiConnect is down
 
 ## Claude Remote MCP Work
 
