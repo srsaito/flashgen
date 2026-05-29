@@ -186,3 +186,25 @@ class TestCreateFlashcardToolCall:
         assert result.get("isError") is True
         error_text = result["content"][0]["text"]
         assert "anki_unavailable" in error_text
+
+
+class TestMCPBearerAuth:
+    def test_post_mcp_with_token_env_and_no_auth_returns_401(self, monkeypatch):
+        import flashgen_mcp.app as app_module
+        monkeypatch.setattr(app_module, "_MCP_TOKEN", "secret-test-token")
+        resp = client.post("/mcp", json=jsonrpc("tools/list"), headers=MCP_HEADERS)
+        assert resp.status_code == 401
+
+    def test_post_mcp_with_token_env_and_valid_bearer_returns_200(self, monkeypatch):
+        import flashgen_mcp.app as app_module
+        monkeypatch.setattr(app_module, "_MCP_TOKEN", "secret-test-token")
+        auth_headers = {**MCP_HEADERS, "Authorization": "Bearer secret-test-token"}
+        resp = client.post("/mcp", json=jsonrpc("tools/list"), headers=auth_headers)
+        assert resp.status_code == 200
+
+    def test_post_mcp_with_token_env_and_wrong_bearer_returns_401(self, monkeypatch):
+        import flashgen_mcp.app as app_module
+        monkeypatch.setattr(app_module, "_MCP_TOKEN", "secret-test-token")
+        auth_headers = {**MCP_HEADERS, "Authorization": "Bearer wrong-token"}
+        resp = client.post("/mcp", json=jsonrpc("tools/list"), headers=auth_headers)
+        assert resp.status_code == 401

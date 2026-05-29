@@ -1,0 +1,15 @@
+[Unit]
+Description=FlashGen MCP HTTP server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/flashgen
+EnvironmentFile=/home/ubuntu/flashgen/.env
+ExecStart=/home/ubuntu/flashgen/.venv/bin/uvicorn flashgen_mcp.app:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

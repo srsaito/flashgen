@@ -1,4 +1,5 @@
 import json
+import os
 
 import requests as _requests
 from fastapi import FastAPI, Request
@@ -6,6 +7,16 @@ from fastapi.responses import JSONResponse, Response
 
 import flashgen
 from flashgen_mcp.schema import CardRequest
+
+_MCP_TOKEN = os.environ.get("FLASHGEN_MCP_TOKEN", "")
+
+
+def _check_bearer(request: Request) -> bool:
+    """Return True if the request carries a valid Bearer token, or if no token is configured."""
+    if not _MCP_TOKEN:
+        return True
+    auth = request.headers.get("Authorization", "")
+    return auth == f"Bearer {_MCP_TOKEN}"
 
 _ANKI_CONNECT_PHRASES = ("AnkiConnect", "Could not connect to Anki")
 
@@ -150,6 +161,8 @@ def create_app() -> FastAPI:
 
     @app.post("/mcp")
     async def mcp_handler(request: Request) -> Response:
+        if not _check_bearer(request):
+            return JSONResponse(status_code=401, content={"error": "unauthorized"})
         body = await request.json()
         rpc_id = body.get("id")
         method = body.get("method", "")
