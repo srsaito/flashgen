@@ -1,0 +1,7 @@
+tunnel: <TUNNEL_ID>
+credentials-file: /home/ubuntu/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: mcp.ssaito.net
+    service: http://127.0.0.1:8000
+  - service: http_status:404
