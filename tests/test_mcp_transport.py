@@ -208,3 +208,54 @@ class TestMCPBearerAuth:
         auth_headers = {**MCP_HEADERS, "Authorization": "Bearer wrong-token"}
         resp = client.post("/mcp", json=jsonrpc("tools/list"), headers=auth_headers)
         assert resp.status_code == 401
+
+
+class TestCreateFlashcardRuntimeErrors:
+    def test_anki_runtime_error_returns_anki_unavailable(self):
+        with patch("flashgen.create_flashcard", side_effect=RuntimeError("AnkiConnect unreachable")):
+            resp = client.post(
+                "/mcp",
+                json=jsonrpc("tools/call", {"name": "create_flashcard", "arguments": {"japanese": "テスト", "english": "test"}}),
+                headers=MCP_HEADERS,
+            )
+        assert resp.status_code == 200
+        result = resp.json()["result"]
+        assert result["isError"] is True
+        assert "anki_unavailable" in result["content"][0]["text"]
+
+    def test_missing_api_key_runtime_error_returns_missing_api_key(self):
+        with patch("flashgen.create_flashcard", side_effect=RuntimeError("OPENAI_API_KEY is not set")):
+            resp = client.post(
+                "/mcp",
+                json=jsonrpc("tools/call", {"name": "create_flashcard", "arguments": {"japanese": "テスト", "english": "test"}}),
+                headers=MCP_HEADERS,
+            )
+        result = resp.json()["result"]
+        assert result["isError"] is True
+        assert "missing_api_key" in result["content"][0]["text"]
+
+    def test_generic_runtime_error_returns_engine_error(self):
+        with patch("flashgen.create_flashcard", side_effect=RuntimeError("something unexpected")):
+            resp = client.post(
+                "/mcp",
+                json=jsonrpc("tools/call", {"name": "create_flashcard", "arguments": {"japanese": "テスト", "english": "test"}}),
+                headers=MCP_HEADERS,
+            )
+        result = resp.json()["result"]
+        assert result["isError"] is True
+        assert "engine_error" in result["content"][0]["text"]
+
+    def test_unknown_tool_returns_rpc_error(self):
+        resp = client.post(
+            "/mcp",
+            json=jsonrpc("tools/call", {"name": "nonexistent_tool", "arguments": {}}),
+            headers=MCP_HEADERS,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "error" in body
+
+    def test_unknown_method_returns_rpc_error(self):
+        resp = client.post("/mcp", json=jsonrpc("unknown/method"), headers=MCP_HEADERS)
+        assert resp.status_code == 200
+        assert "error" in resp.json()

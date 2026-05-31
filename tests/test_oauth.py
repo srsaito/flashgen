@@ -181,3 +181,39 @@ class TestOAuthToken:
         )
         assert resp.status_code == 400
         assert resp.json()["error"] == "unsupported_grant_type"
+
+
+class TestOAuthTokenJsonBody:
+    def test_token_accepts_json_body(self, monkeypatch):
+        import flashgen_mcp.app as app_module
+        monkeypatch.setattr(app_module, "_MCP_TOKEN", "test-token")
+        verifier, challenge = _pkce_pair()
+        code = _do_authorize(challenge)
+        resp = client.post(
+            "/oauth/token",
+            json={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "https://claude.ai/callback",
+                "code_verifier": verifier,
+                "client_id": "test-client",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["access_token"] == "test-token"
+
+    def test_mismatched_redirect_uri_returns_invalid_grant(self):
+        _, challenge = _pkce_pair()
+        code = _do_authorize(challenge, redirect_uri="https://claude.ai/callback")
+        resp = client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "https://evil.example.com/callback",
+                "code_verifier": "anything",
+                "client_id": "test-client",
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "invalid_grant"
