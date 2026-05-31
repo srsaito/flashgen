@@ -1,5 +1,5 @@
-tunnel: <TUNNEL_ID>
-credentials-file: /home/ubuntu/.cloudflared/<TUNNEL_ID>.json
+tunnel: 473d2b56-794f-4109-a6e0-632a373a4005
+credentials-file: /home/ubuntu/.cloudflared/473d2b56-794f-4109-a6e0-632a373a4005.json
 
 ingress:
   - hostname: mcp.ssaito.net
