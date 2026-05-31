@@ -1,14 +1,22 @@
+import base64
+import hashlib
+import html
 import json
 import os
+import secrets
+import time
 
 import requests as _requests
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 import flashgen
 from flashgen_mcp.schema import CardRequest
 
 _MCP_TOKEN = os.environ.get("FLASHGEN_MCP_TOKEN", "")
+
+_ISSUER = "https://mcp.ssaito.net"
+_oauth_codes: dict[str, dict] = {}  # auth_code → {code_challenge, redirect_uri, expires}
 
 
 def _check_bearer(request: Request) -> bool:
@@ -17,6 +25,12 @@ def _check_bearer(request: Request) -> bool:
         return True
     auth = request.headers.get("Authorization", "")
     return auth == f"Bearer {_MCP_TOKEN}"
+
+
+def _pkce_verify(verifier: str, challenge: str) -> bool:
+    digest = hashlib.sha256(verifier.encode()).digest()
+    computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return computed == challenge
 
 _ANKI_CONNECT_PHRASES = ("AnkiConnect", "Could not connect to Anki")
 
@@ -146,6 +160,103 @@ def _tool_error_content(error_key: str, message: str) -> dict:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="FlashGen MCP", version="0.1.0")
+
+    @app.get("/.well-known/oauth-authorization-server")
+    async def oauth_metadata() -> JSONResponse:
+        return JSONResponse({
+            "issuer": _ISSUER,
+            "authorization_endpoint": f"{_ISSUER}/oauth/authorize",
+            "token_endpoint": f"{_ISSUER}/oauth/token",
+            "registration_endpoint": f"{_ISSUER}/oauth/register",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "code_challenge_methods_supported": ["S256"],
+            "token_endpoint_auth_methods_supported": ["none"],
+        })
+
+    @app.post("/oauth/register")
+    async def oauth_register(request: Request) -> JSONResponse:
+        body = await request.json()
+        client_id = secrets.token_urlsafe(16)
+        return JSONResponse(status_code=201, content={
+            "client_id": client_id,
+            "client_id_issued_at": int(time.time()),
+            "redirect_uris": body.get("redirect_uris", []),
+            "token_endpoint_auth_method": "none",
+        })
+
+    @app.get("/oauth/authorize")
+    async def oauth_authorize_get(
+        response_type: str = "code",
+        client_id: str = "",
+        redirect_uri: str = "",
+        code_challenge: str = "",
+        code_challenge_method: str = "S256",
+        state: str = "",
+    ) -> HTMLResponse:
+        e = html.escape
+        body = f"""<!DOCTYPE html>
+<html><head><title>FlashGen MCP – Authorize</title>
+<style>body{{font-family:sans-serif;max-width:480px;margin:80px auto;padding:0 16px}}
+button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
+<body>
+<h2>Authorize FlashGen MCP</h2>
+<p>Allow Claude to access your FlashGen MCP tools (validate and create Anki flashcards)?</p>
+<form method="post" action="/oauth/authorize">
+  <input type="hidden" name="client_id" value="{e(client_id)}">
+  <input type="hidden" name="redirect_uri" value="{e(redirect_uri)}">
+  <input type="hidden" name="code_challenge" value="{e(code_challenge)}">
+  <input type="hidden" name="code_challenge_method" value="{e(code_challenge_method)}">
+  <input type="hidden" name="state" value="{e(state)}">
+  <button type="submit">Authorize</button>
+</form>
+</body></html>"""
+        return HTMLResponse(body)
+
+    @app.post("/oauth/authorize")
+    async def oauth_authorize_post(
+        client_id: str = Form(""),
+        redirect_uri: str = Form(""),
+        code_challenge: str = Form(""),
+        code_challenge_method: str = Form("S256"),
+        state: str = Form(""),
+    ) -> RedirectResponse:
+        code = secrets.token_urlsafe(32)
+        _oauth_codes[code] = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": code_challenge_method,
+            "expires": time.time() + 300,
+        }
+        sep = "&" if "?" in redirect_uri else "?"
+        return RedirectResponse(f"{redirect_uri}{sep}code={code}&state={state}", status_code=302)
+
+    @app.post("/oauth/token")
+    async def oauth_token(request: Request) -> JSONResponse:
+        content_type = request.headers.get("content-type", "")
+        if "application/x-www-form-urlencoded" in content_type:
+            form = await request.form()
+            data = dict(form)
+        else:
+            data = await request.json()
+
+        if data.get("grant_type") != "authorization_code":
+            return JSONResponse(status_code=400, content={"error": "unsupported_grant_type"})
+
+        stored = _oauth_codes.pop(data.get("code", ""), None)
+        if not stored or time.time() > stored["expires"]:
+            return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+        if stored["redirect_uri"] != data.get("redirect_uri", ""):
+            return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+        if not _pkce_verify(data.get("code_verifier", ""), stored["code_challenge"]):
+            return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+
+        return JSONResponse({
+            "access_token": _MCP_TOKEN,
+            "token_type": "bearer",
+            "expires_in": 31536000,
+        })
 
     @app.get("/health")
     async def health() -> dict[str, bool]:

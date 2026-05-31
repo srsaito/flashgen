@@ -16,6 +16,7 @@ rsync -az --delete \
   --exclude='*.egg-info' \
   --exclude='anki_audio_out' \
   --exclude='.beads' \
+  --exclude='.env' \
   ./ "${REMOTE}:${REMOTE_DIR}/"
 
 echo "==> Installing dependencies..."
