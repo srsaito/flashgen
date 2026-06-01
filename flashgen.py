@@ -27,7 +27,7 @@ GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview"
 GEMINI_TTS_VOICE = "Algenib"
 OPENAI_TEXT_MODEL = "gpt-4.1-mini"
 
-ANKI_CONNECT_URL = "http://127.0.0.1:8765"
+ANKI_CONNECT_URL = os.environ.get("ANKI_CONNECT_URL", "http://127.0.0.1:8765")
 
 # Change these to match your Anki setup
 DECK_NAME = "日本語-Soso"
@@ -155,7 +155,7 @@ def anki_invoke(action: str, params: dict | None = None) -> object:
         response.raise_for_status()
     except requests.exceptions.ConnectionError as e:
         raise RuntimeError(
-            "Could not connect to AnkiConnect at http://127.0.0.1:8765. "
+            f"Could not connect to AnkiConnect at {ANKI_CONNECT_URL}. "
             "Make sure Anki is open and the AnkiConnect add-on is installed and enabled."
         ) from e
 

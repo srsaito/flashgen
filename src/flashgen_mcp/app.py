@@ -259,8 +259,12 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
         })
 
     @app.get("/health")
-    async def health() -> dict[str, bool]:
-        return {"ok": True}
+    async def health() -> JSONResponse:
+        try:
+            flashgen.anki_invoke("version")
+            return JSONResponse(status_code=200, content={"ok": True})
+        except Exception:
+            return JSONResponse(status_code=503, content={"ok": False, "anki": False})
 
     @app.get("/mcp")
     async def mcp_discovery() -> JSONResponse:

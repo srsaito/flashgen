@@ -1,0 +1,44 @@
+services:
+  anki:
+    build:
+      context: ./anki-headless
+    image: flashgen-anki:latest
+    container_name: flashgen-anki
+    restart: unless-stopped
+    volumes:
+      # Persist Anki profile, collection, add-ons, and media across restarts
+      - anki-data:/root/.local/share/Anki2
+    networks:
+      - flashgen-net
+    environment:
+      ENABLE_VNC: "0"
+    # AnkiConnect (port 8765) is NOT published to the host.
+    # Other containers on flashgen-net reach it via http://anki:8765.
+    #
+    # Initial setup (first run only):
+    #   docker compose run --rm -e ENABLE_VNC=1 -p 5900:5900 anki
+    #   ssh -L 5900:localhost:5900 flashgen-mcp
+    #   Connect VNC viewer to localhost:5900, log in to AnkiWeb and sync.
+    #   Then start normally: docker compose up -d anki
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -sf -X POST http://localhost:8765
+          -H 'Content-Type: application/json'
+          -d '{"action":"version","version":6}'
+          | grep -q '"result"' || exit 1
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
+
+  # flashgen-mcp service is added in the next phase (flashgen-19i)
+
+volumes:
+  anki-data:
+    driver: local
+
+networks:
+  flashgen-net:
+    driver: bridge
