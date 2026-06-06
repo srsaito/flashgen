@@ -20,7 +20,7 @@ The former `flashgen-mcp` repo was intentionally folded into this repo while the
 The retained layout is:
 
 ```text
-flashgen.py              # CLI entrypoint and current card-generation engine
+src/flashgen.py          # CLI entrypoint (jpflash console script) and current card-generation engine
 src/flashgen_mcp/        # MCP/server package
 docs/                    # shared architecture and implementation docs
 tests/                   # CLI and MCP regression tests

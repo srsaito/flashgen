@@ -1,0 +1,16 @@
+# Keep the Docker build context small. README.md is intentionally NOT ignored
+# (pyproject.toml references it as the project readme during the build).
+.git
+.venv
+**/__pycache__
+*.egg-info
+src/*.egg-info
+anki_audio_out
+.beads
+.coverage
+.env
+.env.*
+!.env.example
+tests
+docs
+deploy/anki-headless

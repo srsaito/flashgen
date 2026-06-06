@@ -85,7 +85,7 @@ export OPENAI_API_KEY="sk-..."
 
 ### 4. Configure flashgen
 
-Open `flashgen.py` and update the constants at the top of the file to match your Anki setup:
+Open `src/flashgen.py` and update the constants at the top of the file to match your Anki setup:
 
 ```python
 DECK_NAME  = "日本語-Soso"                    # Your Anki deck name
@@ -96,14 +96,16 @@ You can also adjust the default TTS provider, provider-specific voices/models, a
 
 ### 5. Add the `jpflash` alias to `~/.zshrc`
 
+`uv sync` installs a `jpflash` console script into the project's `.venv/bin`, so the alias just pipes the clipboard into it:
+
 ```zsh
-alias jpflash='pbpaste | /path/to/flashgen/.venv/bin/python /path/to/flashgen/flashgen.py'
+alias jpflash='pbpaste | /path/to/flashgen/.venv/bin/jpflash'
 ```
 
 Replace `/path/to/flashgen` with the actual path where you cloned the repo — for example:
 
 ```zsh
-alias jpflash='pbpaste | /Users/yourname/ML/flashgen/.venv/bin/python /Users/yourname/ML/flashgen/flashgen.py'
+alias jpflash='pbpaste | /Users/yourname/ML/flashgen/.venv/bin/jpflash'
 ```
 
 Then reload your shell:

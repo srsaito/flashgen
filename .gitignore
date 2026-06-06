@@ -10,6 +10,13 @@ __pycache__/
 *.pyo
 *.egg-info/
 
+# Build / test artifacts
+build/
+dist/
+.coverage
+.coverage.*
+.pytest_cache/
+
 # Environment / secrets
 .env
 

@@ -33,7 +33,37 @@ services:
       start_period: 45s
       retries: 5
 
-  # flashgen-mcp service is added in the next phase (flashgen-19i)
+  flashgen-mcp:
+    build:
+      # Repo root: the Dockerfile installs the project (src/) with uv from here.
+      context: ..
+      dockerfile: deploy/flashgen-mcp/Dockerfile
+    image: flashgen-mcp:latest
+    container_name: flashgen-mcp
+    restart: unless-stopped
+    depends_on:
+      anki:
+        condition: service_healthy
+    # Secrets (FLASHGEN_MCP_TOKEN, OPENAI_API_KEY, GEMINI_API_KEY) come from the
+    # repo-root .env — the same file the systemd unit uses. See .env.example.
+    env_file:
+      - ../.env
+    environment:
+      # Override .env: reach AnkiConnect over the private compose network.
+      ANKI_CONNECT_URL: http://anki:8765
+    ports:
+      # Published to host loopback only; host cloudflared proxies mcp.ssaito.net here.
+      - "127.0.0.1:8000:8000"
+    networks:
+      - flashgen-net
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:8000/mcp >/dev/null || exit 1
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
 
 volumes:
   anki-data:
