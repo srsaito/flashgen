@@ -22,8 +22,8 @@ dev = [
 ]
 
 [project.scripts]
-# CLI: pbpaste | jpflash   (reads formatted JSON from stdin)
-jpflash = "flashgen:main"
+# CLI: pbpaste | flashgen   (reads formatted JSON from stdin)
+flashgen = "flashgen:main"
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -32,7 +32,7 @@ ChatGPT has the best real-time voice for practicing spoken Japanese. The old wor
 3. Manually record it with Quicktime
 4. Create an Anki card by hand
 
-This tool eliminates steps 3 and 4. You copy the JSON that ChatGPT outputs, run `jpflash`, and the card — complete with audio — appears in Anki.
+This tool eliminates steps 3 and 4. You copy the JSON that ChatGPT outputs, run `flashgen`, and the card — complete with audio — appears in Anki.
 
 ---
 
@@ -43,7 +43,7 @@ This tool eliminates steps 3 and 4. You copy the JSON that ChatGPT outputs, run 
 - **[AnkiConnect](https://ankiweb.net/shared/info/2055492159)** add-on installed in Anki (add-on code: `2055492159`)
 - A **Gemini API key** for the default TTS path
 - An **OpenAI API key** if you want OpenAI TTS or want FlashGen to auto-translate missing `japanese` or `english`
-- **macOS** (the `jpflash` alias uses `pbpaste`; Linux/Windows users can adapt it)
+- **macOS** (the `flashgen` alias uses `pbpaste`; Linux/Windows users can adapt it)
 
 ---
 
@@ -94,18 +94,18 @@ MODEL_NAME = "Japanese Listening+Production"  # Your note type name (see Anki Se
 
 You can also adjust the default TTS provider, provider-specific voices/models, and default tags here. As of May 4, 2026, the repo defaults to Gemini TTS with `gemini-3.1-flash-tts-preview` and the `Algenib` voice, and uses `gpt-4o-mini-tts` with the `onyx` voice when `tts_provider` is set to `openai`. FlashGen does not maintain a provider-specific model allowlist, so `tts_provider: "gemini"` can also be paired with another valid Gemini TTS model string such as `gemini-2.5-flash-preview-tts`.
 
-### 5. Add the `jpflash` alias to `~/.zshrc`
+### 5. Add the `flashgen` alias to `~/.zshrc`
 
-`uv sync` installs a `jpflash` console script into the project's `.venv/bin`, so the alias just pipes the clipboard into it:
+`uv sync` installs a `flashgen` console script into the project's `.venv/bin`, so the alias just pipes the clipboard into it:
 
 ```zsh
-alias jpflash='pbpaste | /path/to/flashgen/.venv/bin/jpflash'
+alias flashgen='pbpaste | /path/to/flashgen/.venv/bin/flashgen'
 ```
 
 Replace `/path/to/flashgen` with the actual path where you cloned the repo — for example:
 
 ```zsh
-alias jpflash='pbpaste | /Users/yourname/ML/flashgen/.venv/bin/jpflash'
+alias flashgen='pbpaste | /Users/yourname/ML/flashgen/.venv/bin/flashgen'
 ```
 
 Then reload your shell:
@@ -326,7 +326,7 @@ For **Response cards**, ChatGPT will first ask about (or propose) a situational 
 Copy the JSON output (Cmd+C), switch to your terminal, and run:
 
 ```bash
-jpflash
+flashgen
 ```
 
 The card appears in Anki immediately, complete with TTS audio.

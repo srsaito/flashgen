@@ -20,7 +20,7 @@ The former `flashgen-mcp` repo was intentionally folded into this repo while the
 The retained layout is:
 
 ```text
-src/flashgen.py          # CLI entrypoint (jpflash console script) and current card-generation engine
+src/flashgen.py          # CLI entrypoint (flashgen console script) and current card-generation engine
 src/flashgen_mcp/        # MCP/server package
 docs/                    # shared architecture and implementation docs
 tests/                   # CLI and MCP regression tests
@@ -51,7 +51,7 @@ That refactor should preserve the existing CLI behavior while making the shared 
 CLI flow:
 
 1. User copies JSON from ChatGPT.
-2. `jpflash` pipes clipboard contents into `flashgen.py`.
+2. The `flashgen` alias pipes clipboard contents into the `flashgen` console script.
 3. `flashgen.py` repairs/parses JSON and calls `create_flashcard(...)`.
 4. The engine fills missing translation fields, normalizes furigana for display, resolves TTS proxy text for synthesis, resolves the TTS provider/model, generates audio, stores media through AnkiConnect, creates the Anki note, and prints structured JSON.
 
