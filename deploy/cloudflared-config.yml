@@ -9,9 +9,9 @@ ingress:
   # (sshd binds Tailscale IP + 127.0.0.1 only — no public port). Connect with:
   #   ssh flashgen-mcp-cf   (ProxyCommand: cloudflared access ssh --hostname %h)
   #
-  # STATUS: LIVE but on standby — not yet used and NOT yet gated by Cloudflare
-  # Access (auth is SSH-key-only for now). Adding the Access application for
-  # ssh.ssaito.net is the remaining hardening step, tracked in bead flashgen-8y4.
+  # Gated by Cloudflare Access (self-hosted app, team round-poetry-23ec):
+  # policy auth_email = Allow Emails ssaito@alum.mit.edu via One-time PIN, then
+  # SSH key auth. Verified end-to-end (bead flashgen-8y4, closed).
   - hostname: ssh.ssaito.net
     service: ssh://127.0.0.1:22
 
