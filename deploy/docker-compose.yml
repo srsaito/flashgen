@@ -5,6 +5,8 @@ services:
     image: flashgen-anki:latest
     container_name: flashgen-anki
     restart: unless-stopped
+    # Anki's QtWebEngine (Chromium) needs more than Docker's default 64MB /dev/shm.
+    shm_size: "512m"
     volumes:
       # Persist Anki profile, collection, add-ons, and media across restarts
       - anki-data:/root/.local/share/Anki2

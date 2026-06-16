@@ -21,9 +21,17 @@ sleep 2
 # Then tunnel: ssh -L 5900:localhost:5900 flashgen-mcp
 # Connect any VNC viewer to localhost:5900
 if [ "${ENABLE_VNC:-0}" = "1" ]; then
-    echo "[entrypoint] Starting x11vnc on port 5900 (no password)..."
-    x11vnc -display :99 -nopw -listen 0.0.0.0 -xkb -forever -shared \
-           -noxrecord -noxdamage &
+    if [ -n "${VNC_PASSWORD:-}" ]; then
+        # macOS Screen Sharing refuses no-auth ("None") VNC, so support a password.
+        echo "[entrypoint] Starting x11vnc on port 5900 (password auth)..."
+        x11vnc -storepasswd "${VNC_PASSWORD}" /root/.vncpass >/dev/null 2>&1
+        x11vnc -display :99 -rfbauth /root/.vncpass -listen 0.0.0.0 -noipv6 -xkb \
+               -forever -shared -noxrecord -noxdamage &
+    else
+        echo "[entrypoint] Starting x11vnc on port 5900 (no password)..."
+        x11vnc -display :99 -nopw -listen 0.0.0.0 -noipv6 -xkb -forever -shared \
+               -noxrecord -noxdamage &
+    fi
 fi
 
 echo "[entrypoint] Starting Anki (AnkiConnect will listen on :8765)..."
