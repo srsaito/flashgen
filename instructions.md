@@ -13,15 +13,14 @@ When the user requests a flashcard:
 3. Show the user the FULL validated card as raw JSON, inside a fenced ```json code
    block. Show the complete object so it is copy-paste ready — this is the exact JSON
    the user could feed to the flashgen CLI to create the card manually.
-4. Then ASK the user how they want to proceed, offering these three options:
+4. Then ASK the user whether to:
    a. Create it now — you call `create_flashcard` with these fields (a WRITE action;
-      it will ask the user to approve).
-   b. Discuss/refine the card further — iterate on the fields, then re-validate and
-      show the updated JSON again.
-   c. Stop here — the user will copy the JSON above and create the card manually with
-      the flashgen CLI.
-5. Only call `create_flashcard` if the user chooses (a). After it succeeds, briefly
-   confirm (deck + that it was created).
+      it will ask the user to approve), or
+   b. Stop here — then wait. From there the user may keep refining the card with you
+      (re-validate and show the updated JSON), or copy the JSON above and create it
+      manually with the flashgen CLI.
+5. Only call `create_flashcard` if the user chooses to create. After it succeeds,
+   briefly confirm (deck + that it was created).
 
 Exception: if the user explicitly says "just create it" / "skip the preview," you may
 call `create_flashcard` directly without step 4.
