@@ -13,7 +13,15 @@ This addon, on profile open:
      via AnkiConnect are pushed to AnkiWeb automatically — no GUI dialogs.
 
 It is headless-safe: it never opens a modal. If a full sync is ever required
-(schema change), it logs and skips rather than blocking on a dialog.
+(schema change) on a collection that ALREADY HAS DATA, it logs and skips rather
+than risking a one-way overwrite headlessly.
+
+The one exception is disaster recovery: if the anki-data volume is wiped or
+recreated, the local collection boots EMPTY and the server requires a full sync
+to seed it. With no local data to lose, this addon performs the initial
+FULL_DOWNLOAD automatically so the container repopulates from AnkiWeb instead of
+coming up empty. (An empty collection must NEVER full-upload — that would wipe
+AnkiWeb — so when local is empty we always download, never upload.)
 """
 
 import os
@@ -70,6 +78,46 @@ def _ensure_login() -> bool:
     return False
 
 
+def _collection_is_empty() -> bool:
+    """True only when the local collection has no notes and no cards.
+
+    A freshly created collection (e.g. after the anki-data volume was wiped)
+    reports zero cards/notes even though it ships one default deck. We fail
+    SAFE: if the size can't be read, treat the collection as non-empty so we
+    never auto-download over data we couldn't account for.
+    """
+    try:
+        cards = mw.col.card_count()
+        notes = mw.col.note_count()
+    except Exception as exc:
+        _log(f"could not read collection size: {exc!r} — treating as non-empty")
+        return False
+    return cards == 0 and notes == 0
+
+
+def _full_download(auth, out) -> None:
+    """Seed an EMPTY local collection from AnkiWeb (one-way download).
+
+    Mirrors what aqt.sync.full_download does for the GUI, minus the dialogs:
+    close the collection for a full sync, pull the server copy, then reopen.
+    Only ever called when _collection_is_empty() is True, so there is no local
+    data to lose. Runs synchronously on the main thread (same as the normal
+    background sync above) — acceptable headlessly where there is no UI to block.
+    """
+    try:
+        server_usn = out.server_media_usn if mw.pm.media_syncing_enabled() else None
+    except Exception:
+        server_usn = None
+    mw.col.close_for_full_sync()
+    try:
+        mw.col.full_upload_or_download(auth=auth, server_usn=server_usn, upload=False)
+    finally:
+        # Always reopen, even if the download raised, so AnkiConnect stays alive.
+        mw.col.reopen(after_full_sync=True)
+    mw.reset()
+    _log("initial FULL_DOWNLOAD complete — collection seeded from AnkiWeb")
+
+
 def _background_sync() -> None:
     """Run one normal (incremental) collection sync; never opens a dialog."""
     auth = _current_auth()
@@ -86,7 +134,16 @@ def _background_sync() -> None:
         # one-way choice we must NOT prompt for headlessly.
         name = getattr(required, "name", str(required))
         if name and "FULL" in name.upper():
-            _log(f"full sync required ({name}) — skipping headlessly (manual resolution needed)")
+            # Disaster recovery: a wiped/recreated volume boots EMPTY and the
+            # server demands a full sync to seed it. With nothing to lose, pull
+            # the server copy. (Never upload an empty collection — that wipes
+            # AnkiWeb — so emptiness gates a DOWNLOAD regardless of the exact
+            # FULL_* the server reported.)
+            if _collection_is_empty():
+                _log(f"full sync required ({name}) and local collection is empty — downloading from AnkiWeb")
+                _full_download(auth, out)
+            else:
+                _log(f"full sync required ({name}) — skipping headlessly (manual resolution needed)")
         else:
             _log(f"sync ok (required={name})")
     except Exception as exc:

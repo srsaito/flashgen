@@ -194,3 +194,20 @@ class TestFlashgenSyncAddon:
             "ANKIWEB_PASSWORD",
         ):
             assert needle in src, f"flashgen-sync addon missing expected API: {needle}"
+
+    def test_addon_wires_empty_volume_full_download(self) -> None:
+        """A wiped/empty volume must auto-seed via a one-way FULL_DOWNLOAD.
+
+        Guards the disaster-recovery path (flashgen-2b9): the addon must gate on
+        an empty local collection and pull from AnkiWeb with upload=False, never
+        full-upload an empty collection (which would wipe AnkiWeb).
+        """
+        src = _ADDON.read_text(encoding="utf-8")
+        for needle in (
+            "full_upload_or_download",  # perform the full sync
+            "upload=False",             # download direction (never upload-wipe)
+            "card_count",               # emptiness heuristic
+            "close_for_full_sync",      # full-sync prep
+            "reopen",                   # bring the collection back online
+        ):
+            assert needle in src, f"flashgen-sync addon missing full-download API: {needle}"
