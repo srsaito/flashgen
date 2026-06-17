@@ -93,6 +93,17 @@ COPY ankiconnect-config.json /opt/ankiconnect/config.json
 # (bootstrapped into the profile's addons21 dir by entrypoint.sh).
 COPY flashgen-sync/ /opt/flashgen-sync/
 
+# Seed prefs21.db: pre-set the UI language so a FRESH/wiped anki-data volume does
+# NOT block on Anki's first-run language-selection modal (which hangs headlessly,
+# before the profile opens and the sync addon can run). entrypoint.sh copies this
+# onto an empty volume only. Generated at build time from a tiny, auditable script
+# (Anki bundles its own Python; the system python3 is only needed for this step).
+COPY seed_prefs.py /opt/seed_prefs.py
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && mkdir -p /opt/flashgen-seed \
+    && python3 /opt/seed_prefs.py /opt/flashgen-seed/prefs21.db \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

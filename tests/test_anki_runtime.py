@@ -169,13 +169,41 @@ class TestHealthEndpointAnkiLiveness:
 # before a slow container rebuild. End-to-end auth/sync is verified on the host.
 # ---------------------------------------------------------------------------
 
+import importlib.util
 import py_compile
+import sys
+import types
 from pathlib import Path
+from unittest.mock import MagicMock
 
-_ADDON = (
-    Path(__file__).resolve().parent.parent
-    / "deploy" / "anki-headless" / "flashgen-sync" / "__init__.py"
-)
+_DEPLOY = Path(__file__).resolve().parent.parent / "deploy" / "anki-headless"
+_ADDON = _DEPLOY / "flashgen-sync" / "__init__.py"
+_SEED_GEN = _DEPLOY / "seed_prefs.py"
+_ENTRYPOINT = _DEPLOY / "entrypoint.sh"
+_DOCKERFILE = _DEPLOY / "Dockerfile"
+
+
+def _load_module_from_path(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_addon_module():
+    """Import the addon with aqt stubbed so its pure helpers can be unit-tested.
+
+    The addon does `from aqt import gui_hooks, mw` / `from aqt.qt import QTimer`,
+    which don't exist off-container. Inject mock modules so the file loads and we
+    can call logic like _required_info() directly.
+    """
+    fake_aqt = types.ModuleType("aqt")
+    fake_aqt.gui_hooks = MagicMock()
+    fake_aqt.mw = MagicMock()
+    fake_qt = types.ModuleType("aqt.qt")
+    fake_qt.QTimer = MagicMock()
+    with patch.dict(sys.modules, {"aqt": fake_aqt, "aqt.qt": fake_qt}):
+        return _load_module_from_path("flashgen_sync_addon", _ADDON)
 
 
 class TestFlashgenSyncAddon:
@@ -211,3 +239,72 @@ class TestFlashgenSyncAddon:
             "reopen",                   # bring the collection back online
         ):
             assert needle in src, f"flashgen-sync addon missing full-download API: {needle}"
+
+
+class TestRequiredInfo:
+    """Guards the live-discovered bug: Anki delivers the sync 'required' field as
+    a RAW INT (3 = FULL_DOWNLOAD), so a `.name`-only check ('FULL' in '3') was
+    False and the recovery download was skipped. _required_info must handle both
+    int and enum-object forms. See flashgen-2b9."""
+
+    def test_int_full_download_is_full(self) -> None:
+        mod = _load_addon_module()
+        val, name, is_full = mod._required_info(3)
+        assert (val, name, is_full) == (3, "FULL_DOWNLOAD", True)
+
+    def test_int_full_sync_and_upload_are_full(self) -> None:
+        mod = _load_addon_module()
+        assert mod._required_info(2)[2] is True  # FULL_SYNC
+        assert mod._required_info(4)[2] is True  # FULL_UPLOAD
+
+    def test_int_normal_and_nochanges_not_full(self) -> None:
+        mod = _load_addon_module()
+        assert mod._required_info(1) == (1, "NORMAL_SYNC", False)
+        assert mod._required_info(0) == (0, "NO_CHANGES", False)
+
+    def test_enum_object_with_name_attr(self) -> None:
+        mod = _load_addon_module()
+        enum_like = types.SimpleNamespace(name="FULL_DOWNLOAD")  # int() raises
+        val, name, is_full = mod._required_info(enum_like)
+        assert name == "FULL_DOWNLOAD" and is_full is True
+
+
+class TestSeedPrefs:
+    """The seed prefs21.db must suppress Anki's first-run language dialog (which
+    blocks a wiped volume headlessly) without baking in any secret. flashgen-2b9."""
+
+    def test_seed_generates_dialog_suppressing_db(self, tmp_path) -> None:
+        import pickle
+        import sqlite3
+
+        mod = _load_module_from_path("seed_prefs", _SEED_GEN)
+        db = tmp_path / "prefs21.db"
+        mod.write_seed(str(db))
+
+        con = sqlite3.connect(str(db))
+        names = {r[0] for r in con.execute("SELECT name FROM profiles")}
+        assert names == {"_global", "User 1"}
+
+        meta = pickle.loads(
+            con.execute("SELECT data FROM profiles WHERE name='_global'").fetchone()[0]
+        )
+        # defaultLang set + firstRun False are what skip the language modal.
+        assert meta["defaultLang"], "defaultLang must be set to skip language dialog"
+        assert meta["firstRun"] is False
+        assert meta["last_loaded_profile_name"] == "User 1"
+
+        profile = pickle.loads(
+            con.execute("SELECT data FROM profiles WHERE name='User 1'").fetchone()[0]
+        )
+        assert profile["syncKey"] is None, "seed must not bake in a sync secret"
+
+    def test_entrypoint_seeds_only_fresh_volume(self) -> None:
+        ep = _ENTRYPOINT.read_text(encoding="utf-8")
+        # Copies the seed, and only when prefs21.db is absent (never clobbers).
+        assert "/opt/flashgen-seed/prefs21.db" in ep
+        assert "! -f" in ep and "prefs21.db" in ep
+
+    def test_dockerfile_builds_the_seed(self) -> None:
+        df = _DOCKERFILE.read_text(encoding="utf-8")
+        assert "seed_prefs.py" in df
+        assert "/opt/flashgen-seed/prefs21.db" in df

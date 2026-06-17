@@ -16,6 +16,15 @@ mkdir -p "${ANKI_DATA_DIR}/addons21"
 install_addon /opt/ankiconnect 2055492159
 install_addon /opt/flashgen-sync flashgen_sync
 
+# On a FRESH/wiped volume, seed prefs21.db so Anki skips its first-run language
+# dialog (a GUI modal that hangs headlessly before the profile opens, blocking
+# the sync addon's auto FULL_DOWNLOAD recovery). Only when absent — never clobber
+# an initialized profile's preferences. See seed_prefs.py / flashgen-2b9.
+if [ ! -f "${ANKI_DATA_DIR}/prefs21.db" ]; then
+    echo "[entrypoint] Fresh volume — seeding prefs21.db (skip first-run language dialog)"
+    cp /opt/flashgen-seed/prefs21.db "${ANKI_DATA_DIR}/prefs21.db"
+fi
+
 # Start Xvfb virtual display
 echo "[entrypoint] Starting Xvfb on :99..."
 Xvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &

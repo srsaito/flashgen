@@ -78,6 +78,34 @@ def _ensure_login() -> bool:
     return False
 
 
+# Anki's sync "required" field tells us what kind of sync the server wants.
+# Depending on the Anki build it arrives either as a protobuf enum object (with a
+# .name) OR as a RAW INT — observed live as int 3 (FULL_DOWNLOAD), which silently
+# defeated an earlier `.name`-only check (`"FULL" in "3"` is False) and skipped
+# the very download this addon exists to perform. Handle both. Values 2/3/4 all
+# mean a one-way full sync is required.
+_REQUIRED_NAMES = {
+    0: "NO_CHANGES",
+    1: "NORMAL_SYNC",
+    2: "FULL_SYNC",
+    3: "FULL_DOWNLOAD",
+    4: "FULL_UPLOAD",
+}
+_FULL_REQUIRED = {2, 3, 4}
+
+
+def _required_info(required):
+    """Normalize the sync 'required' field to (value:int|None, name:str, is_full:bool)."""
+    val = None
+    try:
+        val = int(required)
+    except (TypeError, ValueError):
+        pass
+    name = getattr(required, "name", None) or _REQUIRED_NAMES.get(val, str(required))
+    is_full = (val in _FULL_REQUIRED) or ("FULL" in str(name).upper())
+    return val, name, is_full
+
+
 def _collection_is_empty() -> bool:
     """True only when the local collection has no notes and no cards.
 
@@ -129,11 +157,11 @@ def _background_sync() -> None:
         except TypeError:
             out = mw.col.sync_collection(auth)  # older/newer arity fallback
         required = getattr(out, "required", None)
-        # Anki returns a "required" enum: NO_CHANGES / NORMAL_SYNC are handled by
-        # sync_collection itself; FULL_SYNC/FULL_UPLOAD/FULL_DOWNLOAD would need a
-        # one-way choice we must NOT prompt for headlessly.
-        name = getattr(required, "name", str(required))
-        if name and "FULL" in name.upper():
+        # NO_CHANGES / NORMAL_SYNC are handled by sync_collection itself;
+        # FULL_SYNC/FULL_UPLOAD/FULL_DOWNLOAD would need a one-way choice we must
+        # NOT prompt for headlessly.
+        _, name, is_full = _required_info(required)
+        if is_full:
             # Disaster recovery: a wiped/recreated volume boots EMPTY and the
             # server demands a full sync to seed it. With nothing to lose, pull
             # the server copy. (Never upload an empty collection — that wipes
