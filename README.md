@@ -122,7 +122,7 @@ The MCP/server package currently exposes a health endpoint:
 uv run uvicorn flashgen_mcp.app:app --reload
 ```
 
-The server is intended to call the same card-generation engine as the CLI. See `docs/SYSTEM_DESIGN.md` for the one-repo architecture and Lightsail deployment model.
+The server is intended to call the same card-generation engine as the CLI. See `docs/SYSTEM_DESIGN.md` for the one-repo architecture, and **`docs/DEPLOYMENT.md`** for how the containerized server runs on Lightsail (Docker Compose + cloudflared + auto-sync to AnkiWeb) and how to deploy changes.
 
 ---
 

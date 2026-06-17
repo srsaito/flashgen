@@ -1,3 +1,9 @@
+# LEGACY / SUPERSEDED — kept for historical reference only.
+# FlashGen now runs as Docker containers via deploy/docker-compose.yml (see
+# docs/DEPLOYMENT.md). This host-level systemd uvicorn unit was the pre-container
+# deployment and is stopped + disabled on the instance. Do not re-enable it: it
+# binds 127.0.0.1:8000, which conflicts with the flashgen-mcp container.
+
 [Unit]
 Description=FlashGen MCP HTTP server
 After=network.target
