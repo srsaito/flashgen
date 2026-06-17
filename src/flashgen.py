@@ -39,7 +39,6 @@ DEFAULT_TAGS = ["jp", "auto", "conversation"]
 # Debug flag
 DEBUG = False
 
-KANJI_RE = re.compile(r"^[\u3400-\u4dbf\u4e00-\u9fff々〆ヶ]+$")
 ANNOTATED_KANJI_RE = re.compile(
     r"[\u0020\u3000]*([\u3400-\u4dbf\u4e00-\u9fff々〆ヶ]+)\[([^\]]+)\]"
 )
@@ -84,30 +83,19 @@ def sanitize_text(text: str) -> str:
     return text
 
 
-def is_kanji_text(text: str) -> bool:
-    return bool(KANJI_RE.fullmatch(text))
-
-
-def split_evenly(text: str, chunk_count: int) -> list[str] | None:
-    if chunk_count <= 0 or len(text) % chunk_count != 0:
-        return None
-
-    chunk_size = len(text) // chunk_count
-    return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
-
-
 def normalize_furigana_annotation(kanji: str, reading: str) -> str:
-    if not is_kanji_text(kanji) or len(kanji) == 1:
-        return f" {kanji}[{reading}]"
+    """Emit a furigana annotation as a single whole unit: ` kanji[reading]`.
 
-    reading_chunks = split_evenly(reading, len(kanji))
-    if reading_chunks is None:
-        return f" {kanji}[{reading}]"
-
-    return "".join(
-        f" {kanji_char}[{reading_chunk}]"
-        for kanji_char, reading_chunk in zip(kanji, reading_chunks)
-    )
+    We deliberately do NOT re-derive per-kanji readings. Splitting a compound's
+    reading across its kanji is reading-unsafe — pronunciation and morpheme
+    boundaries don't line up with character counts (e.g. 試着室[しちゃくしつ]
+    sliced evenly yields 試[しち] 着[ゃく] 室[しつ], where 着[ゃく] even begins
+    with a standalone small ゃ). Keeping the bracket over the whole kanji run is
+    always reading-safe and respects whatever grouping the LLM chose, which owns
+    furigana insertion. The leading space is the Anki furigana separator; the
+    caller's regex collapses any pre-existing spacing into this one.
+    """
+    return f" {kanji}[{reading}]"
 
 
 def normalize_furigana_text(text: str) -> str:

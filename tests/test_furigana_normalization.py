@@ -6,17 +6,36 @@ import flashgen
 
 
 class FuriganaNormalizationTests(unittest.TestCase):
-    def test_normalizes_spaces_and_splits_even_length_compounds(self):
+    def test_normalizes_spaces_and_keeps_compounds_whole(self):
         text = "スピーチコンテスト中[ちゅう]、　写真[しゃしん]の撮影[さつえい]"
 
         result = flashgen.normalize_furigana_text(text)
 
+        # Spacing is normalized (full-width space -> single ASCII space; a space
+        # inserted before each annotated run) but compounds stay whole — no
+        # per-kanji re-derivation.
         self.assertEqual(
             result,
-            "スピーチコンテスト 中[ちゅう]、 写[しゃ] 真[しん]の 撮[さつ] 影[えい]",
+            "スピーチコンテスト 中[ちゅう]、 写真[しゃしん]の 撮影[さつえい]",
         )
 
-    def test_preserves_unsafe_compounds_while_fixing_annotation_space(self):
+    def test_keeps_compound_reading_whole_instead_of_even_splitting(self):
+        # Headline case: an even split (試[しち] 着[ゃく] 室[しつ]) is reading-
+        # unsafe and even produces a standalone small ゃ. Keep the whole run.
+        self.assertEqual(
+            flashgen.normalize_furigana_text("試着室[しちゃくしつ]"),
+            " 試着室[しちゃくしつ]",
+        )
+
+    def test_preserves_llm_per_kanji_grouping(self):
+        # When the LLM already annotates per kanji, that grouping is respected —
+        # only the spacing is normalized.
+        self.assertEqual(
+            flashgen.normalize_furigana_text("試[し]着[ちゃく]室[しつ]"),
+            " 試[し] 着[ちゃく] 室[しつ]",
+        )
+
+    def test_fixes_annotation_space_without_touching_compounds(self):
         text = "今日[きょう]は映画[えいが]を見[み]ます。"
 
         result = flashgen.normalize_furigana_text(text)
@@ -55,7 +74,7 @@ class FuriganaNormalizationTests(unittest.TestCase):
                 japanese_prompt="日本[にほん]に行[い]きますか？",
             )
 
-        self.assertEqual(captured["japanese"], " 写[しゃ] 真[しん]を 撮[さつ] 影[えい]しました。")
+        self.assertEqual(captured["japanese"], " 写真[しゃしん]を 撮影[さつえい]しました。")
         self.assertEqual(captured["japanese_prompt"], " 日本[にほん]に 行[い]きますか？")
         self.assertEqual(result["japanese"], captured["japanese"])
         self.assertEqual(result["japanese_prompt"], captured["japanese_prompt"])

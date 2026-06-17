@@ -120,7 +120,7 @@ class TestValidateFlashcardToolCall:
         )
         body = resp.json()
         result = json.loads(body["result"]["content"][0]["text"])
-        assert result["japanese"] == " 写[しゃ] 真[しん]を 撮[さつ] 影[えい]しました。"
+        assert result["japanese"] == " 写真[しゃしん]を 撮影[さつえい]しました。"
 
 
 class TestCreateFlashcardToolCall:

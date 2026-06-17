@@ -39,7 +39,7 @@ class TestValidateEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "ok"
-        assert body["japanese"] == " 写[しゃ] 真[しん]を 撮[さつ] 影[えい]しました。"
+        assert body["japanese"] == " 写真[しゃしん]を 撮影[さつえい]しました。"
         assert body["english"] == "I took a photo."
         assert body["tags"] == ["photography"]
 
@@ -90,4 +90,4 @@ class TestValidateEndpoint:
         )
         assert response.status_code == 200
         body = response.json()
-        assert body["japanese_prompt"] == " 写[しゃ] 真[しん]を 撮[さつ] 影[えい]しましたか？"
+        assert body["japanese_prompt"] == " 写真[しゃしん]を 撮影[さつえい]しましたか？"
