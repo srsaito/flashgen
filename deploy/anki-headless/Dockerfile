@@ -73,18 +73,25 @@ RUN curl -fsSL --retry 3 --retry-connrefused --connect-timeout 20 --max-time 600
     && ln -sf /usr/local/share/anki/anki /usr/local/bin/anki \
     && rm -rf /tmp/anki.tar.zst /tmp/anki-src
 
-# Fetch AnkiConnect plugin (2055492159) from GitHub master
+# Fetch Anki Connect Plus — a maintained soft-fork of FooSoft AnkiConnect that
+# supports Anki 24.11 via the modern CollectionOp API. The original FooSoft repo
+# was archived (Nov 2025) and its addNote path uses removed APIs (requireReset)
+# that crash/modal on Anki 24.11. Same HTTP actions + config schema.
 RUN curl -fsSL --retry 3 --retry-connrefused --connect-timeout 20 --max-time 180 \
-        "https://github.com/FooSoft/anki-connect/archive/refs/heads/master.tar.gz" \
+        "https://github.com/Soki-Team/Anki-Connect-Plus/archive/refs/heads/main.tar.gz" \
         -o /tmp/ankiconnect.tar.gz \
     && tar -xzf /tmp/ankiconnect.tar.gz -C /tmp \
     && mkdir -p /opt/ankiconnect \
-    && cp -r /tmp/anki-connect-master/plugin/. /opt/ankiconnect/ \
-    && rm -rf /tmp/ankiconnect.tar.gz /tmp/anki-connect-master
+    && cp -r /tmp/Anki-Connect-Plus-main/plugin/. /opt/ankiconnect/ \
+    && rm -rf /tmp/ankiconnect.tar.gz /tmp/Anki-Connect-Plus-main
 
 # Override default config: bind to 0.0.0.0 so other containers on the Docker
 # network can reach AnkiConnect. Port is NOT published to the host.
 COPY ankiconnect-config.json /opt/ankiconnect/config.json
+
+# FlashGen sync bootstrap addon: headless AnkiWeb login + background auto-sync
+# (bootstrapped into the profile's addons21 dir by entrypoint.sh).
+COPY flashgen-sync/ /opt/flashgen-sync/
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

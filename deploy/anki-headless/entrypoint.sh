@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ADDON_DIR="${ANKI_DATA_DIR}/addons21/2055492159"
-ADDON_SRC="/opt/ankiconnect"
-
-# Bootstrap AnkiConnect on first container start (volume is empty)
-if [ ! -f "${ADDON_DIR}/__init__.py" ]; then
-    echo "[entrypoint] Installing AnkiConnect add-on..."
-    mkdir -p "${ADDON_DIR}"
-    cp -r "${ADDON_SRC}/." "${ADDON_DIR}/"
-fi
+# Install/refresh bundled add-ons on EVERY start (before Anki launches) so that
+# image updates — AnkiConnect version swaps, flashgen-sync code changes — deploy
+# onto the existing volume. Only the addons21/ dirs are replaced; the profile
+# collection (cards, media, sync key in prefs21.db) is left untouched.
+install_addon() {
+    local src="$1" dst="${ANKI_DATA_DIR}/addons21/$2"
+    echo "[entrypoint] Installing add-on $2..."
+    rm -rf "$dst"
+    mkdir -p "$dst"
+    cp -r "$src/." "$dst/"
+}
+mkdir -p "${ANKI_DATA_DIR}/addons21"
+install_addon /opt/ankiconnect 2055492159
+install_addon /opt/flashgen-sync flashgen_sync
 
 # Start Xvfb virtual display
 echo "[entrypoint] Starting Xvfb on :99..."

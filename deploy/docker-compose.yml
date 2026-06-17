@@ -12,6 +12,10 @@ services:
       - anki-data:/root/.local/share/Anki2
     networks:
       - flashgen-net
+    # ANKIWEB_USERNAME / ANKIWEB_PASSWORD come from the repo-root .env; the
+    # bundled flashgen-sync addon uses them to log into AnkiWeb on startup.
+    env_file:
+      - ../.env
     environment:
       ENABLE_VNC: "0"
     # AnkiConnect (port 8765) is NOT published to the host.

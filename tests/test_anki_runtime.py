@@ -159,3 +159,38 @@ class TestHealthEndpointAnkiLiveness:
             f"Expected ok=false when AnkiConnect is unreachable, got: {body}. "
             "Update /health to probe AnkiConnect and return ok=false on failure."
         )
+
+
+# ---------------------------------------------------------------------------
+# 6. flashgen-sync addon: headless AnkiWeb login + auto-sync bootstrap
+#
+# The addon runs inside Anki (needs aqt), so it can't be exercised here. This
+# guards against syntax/typo regressions and confirms it wires the expected API
+# before a slow container rebuild. End-to-end auth/sync is verified on the host.
+# ---------------------------------------------------------------------------
+
+import py_compile
+from pathlib import Path
+
+_ADDON = (
+    Path(__file__).resolve().parent.parent
+    / "deploy" / "anki-headless" / "flashgen-sync" / "__init__.py"
+)
+
+
+class TestFlashgenSyncAddon:
+    def test_addon_compiles(self) -> None:
+        assert _ADDON.is_file(), f"addon missing at {_ADDON}"
+        py_compile.compile(str(_ADDON), doraise=True)
+
+    def test_addon_wires_expected_api(self) -> None:
+        src = _ADDON.read_text(encoding="utf-8")
+        for needle in (
+            "gui_hooks.profile_did_open",  # startup hook
+            "sync_login",                   # programmatic AnkiWeb login
+            "set_sync_key",                 # persist hkey to profile
+            "sync_collection",              # background sync
+            "ANKIWEB_USERNAME",
+            "ANKIWEB_PASSWORD",
+        ):
+            assert needle in src, f"flashgen-sync addon missing expected API: {needle}"
