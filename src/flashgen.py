@@ -122,11 +122,25 @@ def resolve_tts_input(display_text: str, tts_text: str = "") -> str:
     return strip_furigana_markup(candidate).strip()
 
 
+# Line-break representations a caller may supply in the notes field. Anki
+# fields are HTML: only <br> renders a break, so every break form must funnel
+# to a real newline BEFORE html.escape (otherwise a literal <br> escapes into
+# the visible text "&lt;br&gt;"), then back to <br> after escaping.
+_BR_TAG_RE = re.compile(r"<\s*br\s*/?\s*>", re.IGNORECASE)
+
+
 def notes_to_html(notes: str) -> str:
     if not notes.strip():
         return ""
 
     notes = sanitize_text(notes)
+    # Normalize all break representations to a real newline up front. Callers
+    # vary: the local CLI sends real newlines, MCP clients send literal <br>
+    # tags or escaped "\n" sequences. Doing this before escaping keeps genuine
+    # HTML-special chars in definitions safe while still rendering breaks.
+    notes = _BR_TAG_RE.sub("\n", notes)
+    notes = notes.replace("\r\n", "\n").replace("\r", "\n")
+    notes = notes.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
     escaped = html.escape(notes, quote=False)
     return escaped.replace("\n", "<br>")
 

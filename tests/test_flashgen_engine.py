@@ -32,6 +32,28 @@ class TestNotesToHtml:
         assert "&amp;" in result
         assert "&lt;" in result
 
+    def test_literal_br_tags_become_real_br(self):
+        # MCP clients send line breaks as literal <br> tags. These must render
+        # as breaks, not escape into the visible text "&lt;br&gt;" (flashgen-3c6).
+        assert flashgen.notes_to_html("a<br>b") == "a<br>b"
+        assert flashgen.notes_to_html("a<br/>b") == "a<br>b"
+        assert flashgen.notes_to_html("a<br />b") == "a<br>b"
+        assert flashgen.notes_to_html("a<BR>b") == "a<br>b"
+
+    def test_literal_backslash_n_becomes_br(self):
+        # A literal two-char backslash-n (not a real newline) must also convert.
+        assert flashgen.notes_to_html("a\\nb") == "a<br>b"
+        assert flashgen.notes_to_html("a\\r\\nb") == "a<br>b"
+
+    def test_crlf_becomes_single_br(self):
+        assert flashgen.notes_to_html("a\r\nb") == "a<br>b"
+
+    def test_html_chars_still_escaped_with_br_input(self):
+        # Genuine HTML-special chars in the definition stay escaped even when
+        # the caller uses <br> for breaks.
+        result = flashgen.notes_to_html("cost < 5 & up<br>line2")
+        assert result == "cost &lt; 5 &amp; up<br>line2"
+
 
 # ---------------------------------------------------------------------------
 # resolve_tts_config
