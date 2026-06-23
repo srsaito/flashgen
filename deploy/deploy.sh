@@ -20,6 +20,7 @@ rsync -az --delete --timeout=60 -e 'ssh -o ConnectTimeout=10' \
   --exclude='anki_audio_out' \
   --exclude='.beads' \
   --exclude='.env' \
+  --exclude='deploy/secrets' \
   --exclude='build' \
   --exclude='dist' \
   --exclude='.coverage' \

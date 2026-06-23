@@ -37,6 +37,24 @@ def _log(msg: str) -> None:
     print(f"[flashgen-sync] {msg}", flush=True)
 
 
+def _secret(name: str) -> str:
+    """Read a secret, preferring a Docker/Compose secret file over a raw env var.
+
+    If <NAME>_FILE is set (e.g. ANKIWEB_PASSWORD_FILE=/run/secrets/ankiweb_password),
+    read and return the file's contents (trailing newline stripped — secret files
+    conventionally end in one). Otherwise fall back to the <NAME> env var. Using a
+    secret file keeps the value out of the container environment and `docker inspect`.
+    """
+    path = os.environ.get(f"{name}_FILE")
+    if path:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return fh.read().strip()
+        except OSError as exc:
+            _log(f"could not read {name}_FILE ({path}): {exc!r} — falling back to {name} env")
+    return os.environ.get(name, "")
+
+
 def _current_auth():
     """Return stored SyncAuth (has .hkey) or None."""
     try:
@@ -57,8 +75,8 @@ def _ensure_login() -> bool:
     a SIGKILL or the volume was recreated), rather than depending on key
     persistence. Falls back to any existing stored key if login fails.
     """
-    user = os.environ.get("ANKIWEB_USERNAME", "").strip()
-    pw = os.environ.get("ANKIWEB_PASSWORD", "")
+    user = _secret("ANKIWEB_USERNAME").strip()
+    pw = _secret("ANKIWEB_PASSWORD")
     if user and pw:
         try:
             endpoint = mw.pm.sync_endpoint()

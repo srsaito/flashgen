@@ -12,12 +12,19 @@ services:
       - anki-data:/root/.local/share/Anki2
     networks:
       - flashgen-net
-    # ANKIWEB_USERNAME / ANKIWEB_PASSWORD come from the repo-root .env; the
-    # bundled flashgen-sync addon uses them to log into AnkiWeb on startup.
-    env_file:
-      - ../.env
+    # AnkiWeb credentials are mounted as Docker secrets (files under /run/secrets),
+    # NOT env vars — so they never appear in `docker inspect` or the container env.
+    # The flashgen-sync addon reads them via ANKIWEB_*_FILE. The host secret files
+    # live in deploy/secrets/ (gitignored, excluded from the deploy rsync).
+    # This container deliberately does NOT load ../.env (it needs none of the
+    # MCP-side secrets), so the bearer token and API keys stay out of its env too.
+    secrets:
+      - ankiweb_username
+      - ankiweb_password
     environment:
       ENABLE_VNC: "0"
+      ANKIWEB_USERNAME_FILE: /run/secrets/ankiweb_username
+      ANKIWEB_PASSWORD_FILE: /run/secrets/ankiweb_password
     # AnkiConnect (port 8765) is NOT published to the host.
     # Other containers on flashgen-net reach it via http://anki:8765.
     #
@@ -78,3 +85,14 @@ volumes:
 networks:
   flashgen-net:
     driver: bridge
+
+# File-based secrets (Compose, non-Swarm): each is bind-mounted read-only into
+# the service at /run/secrets/<name>. The source files live on the host under
+# deploy/secrets/ — create them with `printf %s '<value>' > deploy/secrets/<name>`
+# and `chmod 600`. They are gitignored and excluded from the deploy rsync so they
+# are never committed and never wiped by a deploy.
+secrets:
+  ankiweb_username:
+    file: ./secrets/ankiweb_username
+  ankiweb_password:
+    file: ./secrets/ankiweb_password

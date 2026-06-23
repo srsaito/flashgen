@@ -19,6 +19,8 @@ dist/
 
 # Environment / secrets
 .env
+# Docker Compose file-based secrets (host-only; see deploy/docker-compose.yml)
+deploy/secrets/
 
 # macOS
 .DS_Store
