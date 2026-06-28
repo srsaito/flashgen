@@ -57,13 +57,22 @@ services:
     depends_on:
       anki:
         condition: service_healthy
-    # Secrets (FLASHGEN_MCP_TOKEN, OPENAI_API_KEY, GEMINI_API_KEY) come from the
-    # repo-root .env — the same file the systemd unit uses. See .env.example.
-    env_file:
-      - ../.env
+    # FLASHGEN_MCP_TOKEN, OPENAI_API_KEY, and GEMINI_API_KEY are mounted as Docker
+    # file-secrets under /run/secrets, NOT env vars — so they never appear in
+    # `docker inspect` or the container env. The app reads them via *_FILE
+    # (flashgen.read_secret). Host secret files live in deploy/secrets/
+    # (gitignored, excluded from the deploy rsync). This container deliberately
+    # does NOT load ../.env anymore — every value it needs is set below.
+    secrets:
+      - flashgen_mcp_token
+      - openai_api_key
+      - gemini_api_key
     environment:
-      # Override .env: reach AnkiConnect over the private compose network.
+      # Reach AnkiConnect over the private compose network.
       ANKI_CONNECT_URL: http://anki:8765
+      FLASHGEN_MCP_TOKEN_FILE: /run/secrets/flashgen_mcp_token
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+      GEMINI_API_KEY_FILE: /run/secrets/gemini_api_key
     ports:
       # Published to host loopback only; host cloudflared proxies mcp.ssaito.net here.
       - "127.0.0.1:8000:8000"
@@ -96,3 +105,9 @@ secrets:
     file: ./secrets/ankiweb_username
   ankiweb_password:
     file: ./secrets/ankiweb_password
+  flashgen_mcp_token:
+    file: ./secrets/flashgen_mcp_token
+  openai_api_key:
+    file: ./secrets/openai_api_key
+  gemini_api_key:
+    file: ./secrets/gemini_api_key

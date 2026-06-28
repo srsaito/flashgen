@@ -2,7 +2,6 @@ import base64
 import hashlib
 import html
 import json
-import os
 import secrets
 import time
 
@@ -13,7 +12,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 import flashgen
 from flashgen_mcp.schema import CardRequest
 
-_MCP_TOKEN = os.environ.get("FLASHGEN_MCP_TOKEN", "")
+# Prefer a Docker/Compose secret file (FLASHGEN_MCP_TOKEN_FILE -> /run/secrets/...)
+# over a plaintext env var, so the bearer token stays out of `docker inspect`.
+_MCP_TOKEN = flashgen.read_secret("FLASHGEN_MCP_TOKEN")
 
 _ISSUER = "https://mcp.ssaito.net"
 _oauth_codes: dict[str, dict] = {}  # auth_code → {code_challenge, redirect_uri, expires}

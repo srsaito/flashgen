@@ -29,6 +29,28 @@ OPENAI_TEXT_MODEL = "gpt-4.1-mini"
 
 ANKI_CONNECT_URL = os.environ.get("ANKI_CONNECT_URL", "http://127.0.0.1:8765")
 
+
+def read_secret(name: str) -> str:
+    """Read a secret, preferring a Docker/Compose secret file over a raw env var.
+
+    If <NAME>_FILE is set (e.g. OPENAI_API_KEY_FILE=/run/secrets/openai_api_key),
+    return that file's contents (trailing whitespace stripped — secret files
+    conventionally end in a newline). Otherwise fall back to the <NAME> env var.
+    Reading from a file keeps the value out of the container environment and
+    `docker inspect`.
+    """
+    path = os.environ.get(f"{name}_FILE")
+    if path:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return fh.read().strip()
+        except OSError as exc:
+            print(
+                f"could not read {name}_FILE ({path}): {exc!r} — falling back to {name} env",
+                file=sys.stderr,
+            )
+    return os.environ.get(name, "")
+
 # Change these to match your Anki setup
 DECK_NAME = "日本語-Soso"
 MODEL_NAME = "Japanese Listening+Production"
@@ -342,7 +364,7 @@ def generate_gemini_tts_file(
 
 def generate_tts_file(tts_config: TTSConfig, text: str, out_path: Path) -> None:
     if tts_config.provider == "openai":
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = read_secret("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set.")
         generate_openai_tts_file(
@@ -354,7 +376,7 @@ def generate_tts_file(tts_config: TTSConfig, text: str, out_path: Path) -> None:
         return
 
     if tts_config.provider == "gemini":
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key = read_secret("GEMINI_API_KEY")
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY is not set.")
         generate_gemini_tts_file(api_key, tts_config, text, out_path)
@@ -501,7 +523,7 @@ def create_flashcard(
     debug_print("model fields", field_names)
 
     if not japanese.strip() or not english.strip():
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = read_secret("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set.")
         client = OpenAI(api_key=api_key)
