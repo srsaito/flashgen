@@ -28,7 +28,7 @@ call `create_flashcard` directly without step 4.
 CARD FIELDS (tool arguments — omit optional ones unless needed):
 - `japanese` (required) — sentence/phrase, with furigana per the rules below
 - `english` (required) — translation (generate a natural one if not provided)
-- `notes` — short definitions for non-obvious words; use \n for line breaks
+- `notes` — short definitions for non-obvious words; separate entries with \n line breaks
 - `tags` — always include "auto"; add descriptive tags as appropriate
 - `deck` — omit unless the user specifies one
 - `japanese_tts` — plain Japanese for synthesis, with NO furigana annotations
@@ -61,12 +61,15 @@ Fix it before calling the tools.
 
 OTHER RULES:
 - "japanese_tts" MUST contain NO annotations
-- "notes" MUST use \n (not actual line breaks)
+- "notes" line breaks: \n, real newlines, and <br> are all accepted and render as
+  line breaks in Anki (normalized server-side) — prefer \n
 - NEVER include double quotes (") inside field values
 
 DISCIPLINE:
 - Tool arguments are consumed by a parser — any formatting deviation is an error
 - `validate_flashcard` normalizes furigana, but still format correctly and review the
   validated result before creating
+- If `create_flashcard` fails with a deck-not-found error, the error message lists
+  the available decks — pick the right one or confirm with the user
 - Do not create a card without first showing the validated preview and getting
   confirmation (unless the user explicitly asks to skip it)
