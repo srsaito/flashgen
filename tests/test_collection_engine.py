@@ -84,6 +84,54 @@ class TestSearchNotesQueryBuilding:
             flashgen.search_notes(query="x", match_field="bogus")
 
 
+class TestSpacedFieldMatching:
+    """flashgen-lhg: the furigana convention also puts spaces before UNANNOTATED
+    units (…告[こく]は ある…). strip_furigana_markup keeps those, so the
+    substring match must ignore spacing or full-sentence dedup silently misses."""
+
+    # Verbatim stored field of the note that exposed the bug.
+    SPACED = "その 報[ほう] 告[こく]は ある 程[てい] 度[ど] 本[ほん] 当[とう]だ。"
+
+    def test_full_sentence_matches_despite_interior_spaces(self):
+        infos = [note_info(1, japanese=self.SPACED)]
+        fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
+        with patch("flashgen.anki_invoke", fake):
+            result = flashgen.search_notes(query="その報告はある程度本当だ")
+        assert result["count"] == 1
+
+    def test_fragment_spanning_space_boundary_matches(self):
+        # 6-char fragment crossing the "…は ある…" space — the original repro.
+        infos = [note_info(1, japanese=self.SPACED)]
+        fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
+        with patch("flashgen.anki_invoke", fake):
+            result = flashgen.search_notes(query="その報告はあ")
+        assert result["count"] == 1
+
+    def test_match_field_any_ignores_japanese_spacing(self):
+        infos = [note_info(1, japanese=self.SPACED)]
+        fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
+        with patch("flashgen.anki_invoke", fake):
+            result = flashgen.search_notes(query="報告はある", match_field="any")
+        assert result["count"] == 1
+
+    def test_full_sentence_builds_single_interleaved_term(self):
+        # Anki has no wildcard cap (verified against AnkiConnect with 13 stars),
+        # so long words stay one term, preserving full ordering in the narrowing.
+        fake = FakeAnki({"findNotes": [], "notesInfo": []})
+        with patch("flashgen.anki_invoke", fake):
+            flashgen.search_notes(query="その報告はある程度本当だ")
+        q = fake.params_of("findNotes")[0]["query"]
+        assert q == '"Japanese:*そ*の*報*告*は*あ*る*程*度*本*当*だ*"'
+
+    def test_out_of_order_content_still_filtered(self):
+        # Every character present but not the sentence — post-filter precision.
+        infos = [note_info(1, japanese="当だ、ある程度本。その報告は別だ")]
+        fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
+        with patch("flashgen.anki_invoke", fake):
+            result = flashgen.search_notes(query="その報告はある程度本当だ")
+        assert result["count"] == 0
+
+
 class TestSearchNotesFuriganaMatching:
     """The acceptance-criterion gotcha: 掃除機 must find ' 掃[そう] 除[じ] 機[き]'."""
 

@@ -678,6 +678,17 @@ def _wildcard_interleave(word: str) -> str:
     return "*" + "*".join(word) + "*"
 
 
+# The furigana convention also puts spaces before UNANNOTATED units
+# (その 報[ほう] 告[こく]は ある…), and strip_furigana_markup only consumes the
+# spaces attached to annotated runs — so stripped field text keeps interior
+# spaces the query never has (flashgen-lhg). Ignore all spacing when matching.
+_JA_SPACE_RE = re.compile(r"[\u0020\u00a0\u3000]+")
+
+
+def _despace(text: str) -> str:
+    return _JA_SPACE_RE.sub("", text)
+
+
 def _note_entry(
     info: dict[str, Any],
     cards: dict[str, Any] | None,
@@ -711,19 +722,18 @@ def _field_text(info: dict[str, Any], field_name: str) -> str:
 
 def _matches_word(info: dict[str, Any], word: str, match_field: str) -> bool:
     if match_field == "japanese_tts":
-        return word in strip_furigana_markup(_field_text(info, "Japanese"))
+        return _despace(word) in _despace(
+            strip_furigana_markup(_field_text(info, "Japanese"))
+        )
     if match_field == "japanese":
         return word in _field_text(info, "Japanese")
     if match_field == "english":
         return word.lower() in _field_text(info, "English").lower()
     # any
-    haystack = " ".join(
-        (
-            strip_furigana_markup(_field_text(info, "Japanese")),
-            _field_text(info, "English"),
-            _field_text(info, "Notes"),
-        )
-    )
+    japanese = _despace(strip_furigana_markup(_field_text(info, "Japanese")))
+    if _despace(word) in japanese:
+        return True
+    haystack = " ".join((_field_text(info, "English"), _field_text(info, "Notes")))
     return word.lower() in haystack.lower()
 
 
@@ -757,13 +767,12 @@ def search_notes(
         post_words = query.split()
         terms = []
         for word in post_words:
-            pattern = _wildcard_interleave(word)
             if match_field == "japanese_tts" or match_field == "japanese":
-                terms.append(f'"Japanese:{pattern}"')
+                terms.append(f'"Japanese:{_wildcard_interleave(word)}"')
             elif match_field == "english":
                 terms.append(f'"English:*{word}*"')
             else:  # any — candidate = word anywhere, or split across furigana
-                terms.append(f'("{word}" OR "Japanese:{pattern}")')
+                terms.append(f'("{word}" OR "Japanese:{_wildcard_interleave(word)}")')
         anki_query = " ".join(terms)
     if deck:
         deck_term = f'deck:"{deck}"'

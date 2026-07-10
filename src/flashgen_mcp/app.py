@@ -112,7 +112,9 @@ _TOOLS = [
             "Read-only, side-effect-free. Search existing Anki notes — use this to answer "
             "'is there already a card for XYZ?' before create_flashcard, or to find notes to "
             "update/delete. Bare-word queries match the furigana-stripped Japanese text by "
-            "default (so 掃除機 finds ' 掃[そう] 除[じ] 機[き]'); switch with match_field. "
+            "default, ignoring annotation spacing — so 掃除機 finds ' 掃[そう] 除[じ] 機[き]', "
+            "and a full sentence matches even though stored fields have spaces between "
+            "units; switch with match_field. "
             "Queries containing ':', quotes, or '*' are passed to Anki as-is. "
             + _ANKI_QUERY_HELP
             + " Results include note_id, model, card_ids/card_count, deck, tags, and "
