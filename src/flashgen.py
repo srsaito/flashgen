@@ -599,6 +599,336 @@ def create_flashcard(
     return result
 
 
+# -----------------------------
+# Collection read/write (MCP search/get/list + delete/update)
+# -----------------------------
+
+# Request-level field names accepted by update_note, mapped like create.
+UPDATABLE_FIELDS = {
+    "japanese",
+    "english",
+    "notes",
+    "japanese_prompt",
+    "english_prompt",
+    "japanese_tts",
+    "japanese_prompt_tts",
+}
+
+SEARCH_MATCH_FIELDS = ("japanese_tts", "japanese", "english", "any")
+
+# search_notes truncates field values in results so a broad query can't dump
+# whole notes into the caller's context; get_note returns full values.
+_FIELD_VALUE_MAX = 400
+
+# Post-filtering needs notesInfo per candidate, so cap how many candidates a
+# single search will fetch before filtering.
+_SEARCH_CANDIDATE_CAP = 500
+
+
+def list_decks() -> list[str]:
+    result = anki_invoke("deckNames")
+    if not isinstance(result, list) or not all(isinstance(x, str) for x in result):
+        raise RuntimeError(f"Unexpected response from deckNames: {result!r}")
+    return result
+
+
+def list_tags() -> list[str]:
+    result = anki_invoke("getTags")
+    if not isinstance(result, list) or not all(isinstance(x, str) for x in result):
+        raise RuntimeError(f"Unexpected response from getTags: {result!r}")
+    return result
+
+
+def _find_note_ids(query: str) -> list[int]:
+    result = anki_invoke("findNotes", {"query": query})
+    if not isinstance(result, list) or not all(isinstance(x, int) for x in result):
+        raise RuntimeError(f"Unexpected response from findNotes: {result!r}")
+    return result
+
+
+def _cards_by_note(note_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Map note id → {card_ids, deck} for a batch of notes (2 AnkiConnect calls)."""
+    if not note_ids:
+        return {}
+    nid_query = "nid:" + ",".join(str(nid) for nid in note_ids)
+    card_ids = anki_invoke("findCards", {"query": nid_query})
+    if not isinstance(card_ids, list):
+        raise RuntimeError(f"Unexpected response from findCards: {card_ids!r}")
+    card_infos = anki_invoke("cardsInfo", {"cards": card_ids})
+    if not isinstance(card_infos, list):
+        raise RuntimeError(f"Unexpected response from cardsInfo: {card_infos!r}")
+    by_note: dict[int, dict[str, Any]] = {}
+    for card in card_infos:
+        if not isinstance(card, dict):
+            continue
+        nid = card.get("note")
+        entry = by_note.setdefault(nid, {"card_ids": [], "deck": card.get("deckName", "")})
+        entry["card_ids"].append(card.get("cardId"))
+    return by_note
+
+
+def _wildcard_interleave(word: str) -> str:
+    """Anki query matching `word`'s characters in order with anything between.
+
+    Furigana markup splices ` [reading]` between kanji ( 掃[そう] 除[じ] 機[き]),
+    so a literal substring search for 掃除機 misses; interleaved wildcards
+    (*掃*除*機*) tolerate the annotations. Over-matching is corrected by the
+    Python post-filter.
+    """
+    return "*" + "*".join(word) + "*"
+
+
+def _note_entry(
+    info: dict[str, Any],
+    cards: dict[str, Any] | None,
+    *,
+    full_fields: bool,
+) -> dict[str, Any]:
+    fields = {}
+    for name, cell in (info.get("fields") or {}).items():
+        value = cell.get("value", "") if isinstance(cell, dict) else str(cell)
+        if not full_fields and len(value) > _FIELD_VALUE_MAX:
+            value = value[:_FIELD_VALUE_MAX] + "…"
+        fields[name] = value
+    cards = cards or {}
+    card_ids = cards.get("card_ids", [])
+    return {
+        "note_id": info.get("noteId"),
+        "deck": cards.get("deck", ""),
+        "model": info.get("modelName", ""),
+        "tags": info.get("tags", []),
+        "card_ids": card_ids,
+        "card_count": len(card_ids),
+        "fields": fields,
+    }
+
+
+def _field_text(info: dict[str, Any], field_name: str) -> str:
+    cell = (info.get("fields") or {}).get(field_name)
+    value = cell.get("value", "") if isinstance(cell, dict) else ""
+    return html.unescape(value)
+
+
+def _matches_word(info: dict[str, Any], word: str, match_field: str) -> bool:
+    if match_field == "japanese_tts":
+        return word in strip_furigana_markup(_field_text(info, "Japanese"))
+    if match_field == "japanese":
+        return word in _field_text(info, "Japanese")
+    if match_field == "english":
+        return word.lower() in _field_text(info, "English").lower()
+    # any
+    haystack = " ".join(
+        (
+            strip_furigana_markup(_field_text(info, "Japanese")),
+            _field_text(info, "English"),
+            _field_text(info, "Notes"),
+        )
+    )
+    return word.lower() in haystack.lower()
+
+
+def search_notes(
+    query: str = "",
+    deck: str | None = None,
+    limit: int = 25,
+    match_field: str = "japanese_tts",
+) -> dict[str, Any]:
+    if match_field not in SEARCH_MATCH_FIELDS:
+        raise RuntimeError(
+            f"'match_field' must be one of: {', '.join(SEARCH_MATCH_FIELDS)}."
+        )
+    if not isinstance(limit, int) or limit < 1:
+        raise RuntimeError("'limit' must be a positive integer.")
+
+    query = (query or "").strip()
+    if not query and not deck:
+        raise RuntimeError("Provide 'query' and/or 'deck'.")
+
+    # A query containing Anki operators (deck:, tag:, nid:, field:...), quoted
+    # phrases, or wildcards is passed through as-is; bare words get per-field
+    # matching with a Python post-filter.
+    is_raw = any(ch in query for ch in ':"*')
+    post_words: list[str] = []
+    if not query:
+        anki_query = ""
+    elif is_raw:
+        anki_query = query
+    else:
+        post_words = query.split()
+        terms = []
+        for word in post_words:
+            pattern = _wildcard_interleave(word)
+            if match_field == "japanese_tts" or match_field == "japanese":
+                terms.append(f'"Japanese:{pattern}"')
+            elif match_field == "english":
+                terms.append(f'"English:*{word}*"')
+            else:  # any — candidate = word anywhere, or split across furigana
+                terms.append(f'("{word}" OR "Japanese:{pattern}")')
+        anki_query = " ".join(terms)
+    if deck:
+        deck_term = f'deck:"{deck}"'
+        anki_query = f"{anki_query} {deck_term}".strip()
+
+    note_ids = _find_note_ids(anki_query)
+    truncated = len(note_ids) > _SEARCH_CANDIDATE_CAP
+    note_ids = note_ids[:_SEARCH_CANDIDATE_CAP]
+
+    infos = get_notes_info(note_ids) if note_ids else []
+    if not isinstance(infos, list):
+        raise RuntimeError(f"Unexpected response from notesInfo: {infos!r}")
+    matched = [
+        info
+        for info in infos
+        if isinstance(info, dict) and info.get("noteId") is not None
+        and all(_matches_word(info, w, match_field) for w in post_words)
+    ]
+
+    truncated = truncated or len(matched) > limit
+    matched = matched[:limit]
+    cards = _cards_by_note([info["noteId"] for info in matched])
+    return {
+        "count": len(matched),
+        "truncated": truncated,
+        "query": anki_query,
+        "notes": [
+            _note_entry(info, cards.get(info["noteId"]), full_fields=False)
+            for info in matched
+        ],
+    }
+
+
+def get_note(note_id: int) -> dict[str, Any]:
+    infos = get_notes_info([note_id])
+    if (
+        not isinstance(infos, list)
+        or not infos
+        or not isinstance(infos[0], dict)
+        or infos[0].get("noteId") is None
+    ):
+        raise RuntimeError(f"Note {note_id} not found.")
+    info = infos[0]
+    cards = _cards_by_note([note_id])
+    return _note_entry(info, cards.get(note_id), full_fields=True)
+
+
+def delete_notes(note_ids: list[int]) -> dict[str, Any]:
+    if not isinstance(note_ids, list) or not note_ids or not all(
+        isinstance(x, int) for x in note_ids
+    ):
+        raise RuntimeError("'note_ids' must be a non-empty list of integers.")
+    infos = get_notes_info(note_ids)
+    if not isinstance(infos, list):
+        raise RuntimeError(f"Unexpected response from notesInfo: {infos!r}")
+    found = [
+        info["noteId"]
+        for info in infos
+        if isinstance(info, dict) and info.get("noteId") is not None
+    ]
+    missing = [nid for nid in note_ids if nid not in found]
+    if found:
+        anki_invoke("deleteNotes", {"notes": found})
+    return {"status": "ok", "deleted": found, "missing": missing}
+
+
+def _regenerate_audio(display_text: str, tts_text: str, tts_config: TTSConfig) -> str:
+    """Generate + store TTS for updated text; returns the [sound:...] field value."""
+    resolved = resolve_tts_input(display_text, tts_text)
+    if not resolved:
+        return ""
+    filename = stable_audio_filename(resolved, tts_config.extension)
+    local_path = OUTPUT_DIR / filename
+    generate_tts_file(tts_config, resolved, local_path)
+    stored = store_media_file(local_path, filename)
+    return f"[sound:{stored}]"
+
+
+def update_note(
+    note_id: int,
+    fields: dict[str, str] | None = None,
+    tags: list[str] | None = None,
+    tts_provider: str | None = None,
+    tts_model: str | None = None,
+) -> dict[str, Any]:
+    fields = fields or {}
+    unknown = set(fields) - UPDATABLE_FIELDS
+    if unknown:
+        raise RuntimeError(
+            f"Unknown field(s): {', '.join(sorted(unknown))}. "
+            f"Updatable fields: {', '.join(sorted(UPDATABLE_FIELDS))}."
+        )
+    if not fields and tags is None:
+        raise RuntimeError("Provide 'fields' and/or 'tags' to update.")
+    if tags is not None and (
+        not isinstance(tags, list) or not all(isinstance(t, str) for t in tags)
+    ):
+        raise RuntimeError("'tags' must be a list of strings.")
+
+    current = get_note(note_id)  # raises if the note doesn't exist
+
+    anki_fields: dict[str, str] = {}
+    japanese = None
+    if "japanese" in fields:
+        japanese = normalize_furigana_text(fields["japanese"])
+        anki_fields["Japanese"] = html.escape(sanitize_text(japanese), quote=False)
+    if "english" in fields:
+        anki_fields["English"] = html.escape(sanitize_text(fields["english"]), quote=False)
+    if "notes" in fields:
+        anki_fields["Notes"] = notes_to_html(fields["notes"])
+    japanese_prompt = None
+    if "japanese_prompt" in fields:
+        japanese_prompt = normalize_furigana_text(fields["japanese_prompt"])
+        anki_fields["Japanese Prompt"] = html.escape(
+            sanitize_text(japanese_prompt), quote=False
+        )
+    if "english_prompt" in fields:
+        anki_fields["English Prompt"] = html.escape(
+            sanitize_text(fields["english_prompt"]), quote=False
+        )
+
+    # Changing Japanese text (or its TTS override) invalidates the stored audio,
+    # so regenerate — including Audio Prompt for prompt changes (dialog cards are
+    # prompt-audio-first; stale prompt audio silently breaks the card front).
+    regen_main = "japanese" in fields or "japanese_tts" in fields
+    regen_prompt = "japanese_prompt" in fields or "japanese_prompt_tts" in fields
+    if regen_main or regen_prompt:
+        tts_config = resolve_tts_config(tts_provider, tts_model)
+    if regen_main:
+        display = (
+            japanese
+            if japanese is not None
+            else html.unescape(current["fields"].get("Japanese", ""))
+        )
+        anki_fields["Audio"] = _regenerate_audio(
+            display, fields.get("japanese_tts", ""), tts_config
+        )
+    if regen_prompt:
+        display = (
+            japanese_prompt
+            if japanese_prompt is not None
+            else html.unescape(current["fields"].get("Japanese Prompt", ""))
+        )
+        anki_fields["Audio Prompt"] = _regenerate_audio(
+            display, fields.get("japanese_prompt_tts", ""), tts_config
+        )
+
+    if anki_fields:
+        anki_invoke("updateNoteFields", {"note": {"id": note_id, "fields": anki_fields}})
+
+    if tags is not None:
+        old_tags = set(current["tags"])
+        new_tags = set(tags)
+        to_remove = sorted(old_tags - new_tags)
+        to_add = sorted(new_tags - old_tags)
+        if to_remove:
+            anki_invoke("removeTags", {"notes": [note_id], "tags": " ".join(to_remove)})
+        if to_add:
+            anki_invoke("addTags", {"notes": [note_id], "tags": " ".join(to_add)})
+
+    result = get_note(note_id)
+    result["status"] = "ok"
+    return result
+
+
 def read_json_input() -> dict[str, Any]:
     raw = sys.stdin.read()
     try:

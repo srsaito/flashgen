@@ -10,7 +10,13 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 import flashgen
-from flashgen_mcp.schema import CardRequest
+from flashgen_mcp.schema import (
+    CardRequest,
+    DeleteNotesRequest,
+    GetNoteRequest,
+    SearchNotesRequest,
+    UpdateNoteRequest,
+)
 
 # Prefer a Docker/Compose secret file (FLASHGEN_MCP_TOKEN_FILE -> /run/secrets/...)
 # over a plaintext env var, so the bearer token stays out of `docker inspect`.
@@ -69,6 +75,16 @@ _CARD_INPUT_SCHEMA = {
     },
 }
 
+# Brief Anki search syntax reference, shared by the search tool descriptions.
+_ANKI_QUERY_HELP = (
+    "Anki search syntax: deck:\"日本語-Soso\", tag:jp, nid:1234567890, "
+    "\"quoted exact phrase\", field searches like Japanese:*語*, terms are ANDed, "
+    "'or' between terms, -term negates."
+)
+
+_READ_ONLY = {"readOnlyHint": True}
+_DESTRUCTIVE = {"readOnlyHint": False, "destructiveHint": True}
+
 _TOOLS = [
     {
         "name": "validate_flashcard",
@@ -77,6 +93,7 @@ _TOOLS = [
             "Use this to preview and confirm card content before asking the user to approve creation."
         ),
         "inputSchema": _CARD_INPUT_SCHEMA,
+        "annotations": _READ_ONLY,
     },
     {
         "name": "create_flashcard",
@@ -84,9 +101,133 @@ _TOOLS = [
             "WRITE ACTION — only call after the user has reviewed the card JSON and explicitly "
             "confirmed they want to create the card. "
             "Creates an Anki note and generates TTS audio immediately. "
-            "This action is irreversible."
+            "This action is irreversible. "
+            "Before creating, call search_notes to check whether a similar card already exists."
         ),
         "inputSchema": _CARD_INPUT_SCHEMA,
+    },
+    {
+        "name": "search_notes",
+        "description": (
+            "Read-only, side-effect-free. Search existing Anki notes — use this to answer "
+            "'is there already a card for XYZ?' before create_flashcard, or to find notes to "
+            "update/delete. Bare-word queries match the furigana-stripped Japanese text by "
+            "default (so 掃除機 finds ' 掃[そう] 除[じ] 機[き]'); switch with match_field. "
+            "Queries containing ':', quotes, or '*' are passed to Anki as-is. "
+            + _ANKI_QUERY_HELP
+            + " Results include note_id, model, card_ids/card_count, deck, tags, and "
+            "(truncated) fields; use get_note for full field values."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Bare words (matched per match_field) or raw Anki search syntax.",
+                },
+                "deck": {
+                    "type": "string",
+                    "description": "Optional deck scope; ANDed into the query as deck:\"<deck>\".",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max notes to return (default 25, max 100). 'truncated' is true when capped.",
+                },
+                "match_field": {
+                    "type": "string",
+                    "enum": ["japanese_tts", "japanese", "english", "any"],
+                    "description": (
+                        "Field bare words match against. japanese_tts (default) = "
+                        "furigana-stripped Japanese text; japanese = raw Japanese field "
+                        "including furigana markup; english; any."
+                    ),
+                },
+            },
+        },
+        "annotations": _READ_ONLY,
+    },
+    {
+        "name": "get_note",
+        "description": (
+            "Read-only, side-effect-free. Fetch one Anki note's full fields, tags, deck, "
+            "model, and card_ids by note_id — e.g. to confirm content before update/delete."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "note_id": {"type": "integer", "description": "Anki note id (from search_notes or create_flashcard)."},
+            },
+            "required": ["note_id"],
+        },
+        "annotations": _READ_ONLY,
+    },
+    {
+        "name": "list_decks",
+        "description": "Read-only, side-effect-free. List all Anki deck names.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "annotations": _READ_ONLY,
+    },
+    {
+        "name": "list_tags",
+        "description": "Read-only, side-effect-free. List all tags in the Anki collection.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "annotations": _READ_ONLY,
+    },
+    {
+        "name": "delete_notes",
+        "description": (
+            "WRITE ACTION — only call after the user has explicitly confirmed which notes to "
+            "delete. Permanently deletes the given Anki notes and all their cards. "
+            "This action is irreversible. Verify targets first with search_notes/get_note."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "note_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Note ids to delete.",
+                },
+            },
+            "required": ["note_ids"],
+        },
+        "annotations": _DESTRUCTIVE,
+    },
+    {
+        "name": "update_note",
+        "description": (
+            "WRITE ACTION — only call after the user has explicitly confirmed the edit. "
+            "Updates fields and/or tags of an existing Anki note in place; the previous "
+            "content is overwritten (irreversible). Field keys: japanese, english, notes, "
+            "japanese_prompt, english_prompt, japanese_tts, japanese_prompt_tts. "
+            "Changing japanese/japanese_tts regenerates the Audio field; changing "
+            "japanese_prompt/japanese_prompt_tts regenerates Audio Prompt. "
+            "'tags' replaces the full tag list when provided."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "note_id": {"type": "integer", "description": "Anki note id to update."},
+                "fields": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "description": "Field values to set (request-level keys, same as create_flashcard).",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Replacement tag list (omit to leave tags unchanged).",
+                },
+                "tts_provider": {
+                    "type": "string",
+                    "enum": ["openai", "gemini"],
+                    "description": "TTS provider for regenerated audio (with tts_model).",
+                },
+                "tts_model": {"type": "string", "description": "TTS model name (with tts_provider)."},
+            },
+            "required": ["note_id"],
+        },
+        "annotations": _DESTRUCTIVE,
     },
 ]
 
@@ -159,6 +300,22 @@ def _tool_error_content(error_key: str, message: str) -> dict:
     }
 
 
+def _engine_result(rpc_id, fn) -> JSONResponse:
+    """Call an Anki-backed engine function, mapping its failures to tool errors."""
+    try:
+        result = fn()
+        return _rpc_ok(rpc_id, {"content": [{"type": "text", "text": json.dumps(result)}]})
+    except _requests.exceptions.ConnectionError as exc:
+        return _rpc_ok(rpc_id, _tool_error_content("anki_unavailable", str(exc)))
+    except RuntimeError as exc:
+        msg = str(exc)
+        if _is_anki_error(msg):
+            return _rpc_ok(rpc_id, _tool_error_content("anki_unavailable", msg))
+        if _is_missing_api_key(msg):
+            return _rpc_ok(rpc_id, _tool_error_content("missing_api_key", msg))
+        return _rpc_ok(rpc_id, _tool_error_content("engine_error", msg))
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="FlashGen MCP", version="0.1.0")
 
@@ -202,7 +359,7 @@ def create_app() -> FastAPI:
 button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
 <body>
 <h2>Authorize FlashGen MCP</h2>
-<p>Allow Claude to access your FlashGen MCP tools (validate and create Anki flashcards)?</p>
+<p>Allow Claude to access your FlashGen MCP tools (search, validate, create, update, and delete Anki flashcards)?</p>
 <form method="post" action="/oauth/authorize">
   <input type="hidden" name="client_id" value="{e(client_id)}">
   <input type="hidden" name="redirect_uri" value="{e(redirect_uri)}">
@@ -303,18 +460,46 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
                     return _rpc_ok(rpc_id, {"content": [{"type": "text", "text": json.dumps(result)}]})
 
                 if name == "create_flashcard":
-                    try:
-                        result = _create_args(args)
-                        return _rpc_ok(rpc_id, {"content": [{"type": "text", "text": json.dumps(result)}]})
-                    except _requests.exceptions.ConnectionError as exc:
-                        return _rpc_ok(rpc_id, _tool_error_content("anki_unavailable", str(exc)))
-                    except RuntimeError as exc:
-                        msg = str(exc)
-                        if _is_anki_error(msg):
-                            return _rpc_ok(rpc_id, _tool_error_content("anki_unavailable", msg))
-                        if _is_missing_api_key(msg):
-                            return _rpc_ok(rpc_id, _tool_error_content("missing_api_key", msg))
-                        return _rpc_ok(rpc_id, _tool_error_content("engine_error", msg))
+                    return _engine_result(rpc_id, lambda: _create_args(args))
+
+                if name == "search_notes":
+                    req = SearchNotesRequest(**args)
+                    return _engine_result(
+                        rpc_id,
+                        lambda: flashgen.search_notes(
+                            query=req.query,
+                            deck=req.deck,
+                            limit=req.limit,
+                            match_field=req.match_field,
+                        ),
+                    )
+
+                if name == "get_note":
+                    req = GetNoteRequest(**args)
+                    return _engine_result(rpc_id, lambda: flashgen.get_note(req.note_id))
+
+                if name == "list_decks":
+                    return _engine_result(rpc_id, flashgen.list_decks)
+
+                if name == "list_tags":
+                    return _engine_result(rpc_id, flashgen.list_tags)
+
+                if name == "delete_notes":
+                    req = DeleteNotesRequest(**args)
+                    return _engine_result(rpc_id, lambda: flashgen.delete_notes(req.note_ids))
+
+                if name == "update_note":
+                    req = UpdateNoteRequest(**args)
+                    return _engine_result(
+                        rpc_id,
+                        lambda: flashgen.update_note(
+                            req.note_id,
+                            fields=req.fields,
+                            tags=req.tags,
+                            tts_provider=req.tts_provider,
+                            tts_model=req.tts_model,
+                        ),
+                    )
 
                 return _rpc_error(rpc_id, -32601, f"Unknown tool: {name}")
 

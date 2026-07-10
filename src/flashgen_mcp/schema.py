@@ -1,4 +1,6 @@
-from pydantic import BaseModel, model_validator
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class CardRequest(BaseModel):
@@ -20,6 +22,45 @@ class CardRequest(BaseModel):
             raise ValueError(
                 "at least one of 'japanese' or 'english' must be provided"
             )
+        if (self.tts_provider is None) != (self.tts_model is None):
+            raise ValueError(
+                "'tts_provider' and 'tts_model' must be provided together or both omitted"
+            )
+        return self
+
+
+class SearchNotesRequest(BaseModel):
+    query: str = ""
+    deck: str | None = None
+    limit: int = Field(default=25, ge=1, le=100)
+    match_field: Literal["japanese_tts", "japanese", "english", "any"] = "japanese_tts"
+
+    @model_validator(mode="after")
+    def check_constraints(self) -> "SearchNotesRequest":
+        if not self.query.strip() and not (self.deck or "").strip():
+            raise ValueError("provide 'query' and/or 'deck'")
+        return self
+
+
+class GetNoteRequest(BaseModel):
+    note_id: int
+
+
+class DeleteNotesRequest(BaseModel):
+    note_ids: list[int] = Field(min_length=1)
+
+
+class UpdateNoteRequest(BaseModel):
+    note_id: int
+    fields: dict[str, str] | None = None
+    tags: list[str] | None = None
+    tts_provider: str | None = None
+    tts_model: str | None = None
+
+    @model_validator(mode="after")
+    def check_constraints(self) -> "UpdateNoteRequest":
+        if not self.fields and self.tags is None:
+            raise ValueError("provide 'fields' and/or 'tags' to update")
         if (self.tts_provider is None) != (self.tts_model is None):
             raise ValueError(
                 "'tts_provider' and 'tts_model' must be provided together or both omitted"
