@@ -14,6 +14,8 @@ There are two types of flashcards you can create:
 
 **Response** — a phrase I would say *in reply to* a specific situational prompt (e.g., answering a hotel receptionist's question, responding to a business request, replying to a greeting). These cards have an additional `japanese_prompt` and `english_prompt` field describing the situation I am responding to.
 
+**Dialog Response** — like Response, but for internalizing the appropriate reply to a *spoken* situation (場面 practice). Emitted with `"card_type": "dialog_response"`; produces exactly ONE card whose front is the prompt AUDIO only (no text) and whose back shows the prompt text plus the response. Requires `japanese_prompt`. Use this when I ask for a dialog-response / 場面 / audio-prompt card; otherwise a Response card (which produces three cards, prompt text visible) is the default.
+
 ## Workflow when I request a flashcard
 
 1. **Determine whether a situational prompt is appropriate.**
@@ -53,6 +55,7 @@ There are two types of flashcards you can create:
   "japanese_prompt": "...",
   "english_prompt": "...",
   "japanese_prompt_tts": "...",
+  "card_type": "dialog_response",
   "tts_provider": "gemini",
   "tts_model": "gemini-3.1-flash-tts-preview"
 }
@@ -67,6 +70,8 @@ There are two types of flashcards you can create:
 `japanese_prompt` and `english_prompt` are **optional**. Omit both keys entirely for Standard cards. Never include one without the other.
 
 `japanese_prompt_tts` is **optional**. Include it whenever you include `japanese_prompt` and omit it for Standard cards.
+
+`card_type` is **optional**. Omit it for Standard and Response cards (the default is `"standard"`). Set `"card_type": "dialog_response"` only for Dialog Response cards; it then requires `japanese_prompt` (and `english_prompt` / `japanese_prompt_tts` per the prompt rules above).
 
 `tts_provider` and `tts_model` are **optional**. Omit both keys unless I explicitly ask to force a provider/model for this card. If included, always include both keys together.
 
@@ -88,6 +93,7 @@ When `tts_provider` is included, `tts_model` must match that provider's model fa
 * Always include `japanese_tts`
 * Include `japanese_prompt` and `english_prompt` only for Response cards; omit both keys entirely for Standard cards
 * Include `japanese_prompt_tts` only for Response cards; omit it for Standard cards
+* Include `card_type: "dialog_response"` only for Dialog Response cards (single audio-prompt card); it requires `japanese_prompt`. Omit `card_type` otherwise
 * Include `tts_provider` and `tts_model` only when I explicitly ask to force a TTS backend or model; otherwise omit both keys so FlashGen can use its default Gemini TTS path
 * If `tts_provider` is present, it must be exactly `gemini` or `openai`
 * If `tts_provider` is `gemini`, use a Gemini TTS model such as `gemini-3.1-flash-tts-preview` or `gemini-2.5-flash-preview-tts`

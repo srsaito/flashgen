@@ -15,6 +15,7 @@ class CardRequest(BaseModel):
     japanese_prompt_tts: str = ""
     tts_provider: str | None = None
     tts_model: str | None = None
+    card_type: Literal["standard", "dialog_response"] = "standard"
 
     @model_validator(mode="after")
     def check_constraints(self) -> "CardRequest":
@@ -25,6 +26,10 @@ class CardRequest(BaseModel):
         if (self.tts_provider is None) != (self.tts_model is None):
             raise ValueError(
                 "'tts_provider' and 'tts_model' must be provided together or both omitted"
+            )
+        if self.card_type == "dialog_response" and not self.japanese_prompt.strip():
+            raise ValueError(
+                "card_type 'dialog_response' requires a non-empty 'japanese_prompt'"
             )
         return self
 
@@ -73,6 +78,7 @@ class CardResult(BaseModel):
     note_id: int
     deck: str
     model: str
+    card_type: str = "standard"
     japanese: str
     english: str
     notes: str

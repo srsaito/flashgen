@@ -72,6 +72,17 @@ _CARD_INPUT_SCHEMA = {
             "description": "TTS provider",
         },
         "tts_model": {"type": "string", "description": "TTS model name"},
+        "card_type": {
+            "type": "string",
+            "enum": ["standard", "dialog_response"],
+            "description": (
+                "standard (default): up to three cards (listening, production, "
+                "and — when a prompt is given — response). dialog_response: exactly "
+                "one card to internalize the appropriate response to a spoken "
+                "situation — audio-only prompt on the front, prompt text + response "
+                "on the back; requires japanese_prompt."
+            ),
+        },
     },
 }
 
@@ -266,6 +277,7 @@ def _validate_args(args: dict) -> dict:
         "japanese_prompt_tts": req.japanese_prompt_tts,
         "tts_provider": req.tts_provider,
         "tts_model": req.tts_model,
+        "card_type": req.card_type,
     }
 
 
@@ -284,6 +296,7 @@ def _create_args(args: dict) -> dict:
         japanese_prompt_tts=req.japanese_prompt_tts,
         tts_provider=req.tts_provider,
         tts_model=req.tts_model,
+        card_type=req.card_type,
     )
 
 
@@ -527,6 +540,7 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
             "japanese_prompt_tts": req.japanese_prompt_tts,
             "tts_provider": req.tts_provider,
             "tts_model": req.tts_model,
+            "card_type": req.card_type,
         }
 
     @app.post("/create")
@@ -544,6 +558,7 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
                 japanese_prompt_tts=req.japanese_prompt_tts,
                 tts_provider=req.tts_provider,
                 tts_model=req.tts_model,
+                card_type=req.card_type,
             )
         except _requests.exceptions.ConnectionError as exc:
             return JSONResponse(

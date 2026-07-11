@@ -55,6 +55,68 @@ def read_secret(name: str) -> str:
 DECK_NAME = "日本語-Soso"
 MODEL_NAME = "Japanese Listening+Production"
 
+# Single-card 場面-response note type, created programmatically via AnkiConnect
+# createModel (docs/SPEC-dialog-response.md). Same fields as MODEL_NAME so
+# add_note()'s field mapping is shared; exactly one card template.
+DIALOG_MODEL_NAME = "Japanese Dialog Response"
+
+CARD_TYPES = ("standard", "dialog_response")
+
+DIALOG_MODEL_FIELDS = [
+    "Japanese",
+    "English",
+    "Notes",
+    "Audio",
+    "Japanese Prompt",
+    "English Prompt",
+    "Audio Prompt",
+]
+
+# Front is audio-only by design: the learner must parse the prompt by ear and
+# produce the appropriate response. No prompt or answer text may appear here.
+DIALOG_CARD_FRONT = """\
+<div>どう答えますか？</div>
+<br>
+<div>{{Audio Prompt}}</div>
+"""
+
+# Back reveals the prompt text first (self-check: did you actually hear it?),
+# then the response with its audio, gloss, and notes.
+DIALOG_CARD_BACK = """\
+{{FrontSide}}
+
+<hr id=answer>
+
+<b>きっかけ</b>：
+<div style="font-size: 1.4em;">{{furigana:Japanese Prompt}}</div>
+{{#English Prompt}}<div>{{English Prompt}}</div>{{/English Prompt}}
+<br>
+<b>回答</b>：
+<div style="font-size: 1.4em;">{{furigana:Japanese}}</div>
+<div>{{Audio}}</div>
+<br>
+<div>{{English}}</div>
+{{#Notes}}<div class="notes">{{furigana:Notes}}</div>{{/Notes}}
+"""
+
+DIALOG_MODEL_CSS = """\
+.card {
+  font-family: arial;
+  font-size: 20px;
+  text-align: center;
+  color: black;
+  background-color: white;
+}
+.notes {
+  margin-top: 12px;
+  font-size: 18px;
+  color: #444;
+}
+.nightMode .notes {
+  color: #bbb;
+}
+"""
+
 OUTPUT_DIR = Path("anki_audio_out")
 DEFAULT_TAGS = ["jp", "auto", "conversation"]
 
@@ -191,7 +253,12 @@ def anki_invoke(action: str, params: dict | None = None) -> object:
     return data.get("result")
 
 
-def check_anki_ready(deck_name: str, model_name: str) -> None:
+def check_anki_ready(deck_name: str, model_name: str | None = None) -> None:
+    """Verify AnkiConnect is reachable and the deck (and optionally model) exist.
+
+    model_name=None skips the note-type check — used by the dialog path, where
+    ensure_dialog_model() has already verified or created the model.
+    """
     version = anki_invoke("version")
     if not isinstance(version, int):
         raise RuntimeError(f"Unexpected AnkiConnect version response: {version!r}")
@@ -205,6 +272,9 @@ def check_anki_ready(deck_name: str, model_name: str) -> None:
             f"Available decks: {deck_names}"
         )
 
+    if model_name is None:
+        return
+
     model_names = anki_invoke("modelNames")
     if not isinstance(model_names, list):
         raise RuntimeError(f"Unexpected modelNames response: {model_names!r}")
@@ -213,6 +283,37 @@ def check_anki_ready(deck_name: str, model_name: str) -> None:
             f"Note type '{model_name}' not found.\n"
             f"Available note types: {model_names}"
         )
+
+
+def ensure_dialog_model() -> None:
+    """Create the Japanese Dialog Response note type via createModel if absent.
+
+    Templates live in code (single source of truth); the model syncs to
+    AnkiWeb / the headless container like any other collection change. The
+    legacy MODEL_NAME stays manually managed.
+    """
+    model_names = anki_invoke("modelNames")
+    if not isinstance(model_names, list):
+        raise RuntimeError(f"Unexpected modelNames response: {model_names!r}")
+    if DIALOG_MODEL_NAME in model_names:
+        return
+
+    anki_invoke(
+        "createModel",
+        {
+            "modelName": DIALOG_MODEL_NAME,
+            "inOrderFields": list(DIALOG_MODEL_FIELDS),
+            "css": DIALOG_MODEL_CSS,
+            "isCloze": False,
+            "cardTemplates": [
+                {
+                    "Name": "Response",
+                    "Front": DIALOG_CARD_FRONT,
+                    "Back": DIALOG_CARD_BACK,
+                }
+            ],
+        },
+    )
 
 
 def get_model_field_names(model_name: str) -> list[str]:
@@ -514,11 +615,25 @@ def create_flashcard(
     japanese_prompt_tts: str = "",
     tts_provider: str | None = None,
     tts_model: str | None = None,
+    card_type: str = "standard",
 ) -> dict[str, Any]:
+    if card_type not in CARD_TYPES:
+        raise RuntimeError(f"'card_type' must be one of: {', '.join(CARD_TYPES)}.")
+
     final_tags = tags if tags is not None else DEFAULT_TAGS
     tts_config = resolve_tts_config(tts_provider, tts_model)
 
-    check_anki_ready(deck_name, model_name)
+    if card_type == "dialog_response":
+        if not japanese_prompt.strip():
+            raise RuntimeError(
+                "card_type 'dialog_response' requires a non-empty 'japanese_prompt' "
+                "— the prompt audio is the entire front of the card."
+            )
+        model_name = DIALOG_MODEL_NAME
+        ensure_dialog_model()
+        check_anki_ready(deck_name)
+    else:
+        check_anki_ready(deck_name, model_name)
     field_names = get_model_field_names(model_name)
     debug_print("model fields", field_names)
 
@@ -581,6 +696,7 @@ def create_flashcard(
         "note_id": note_id,
         "deck": deck_name,
         "model": model_name,
+        "card_type": card_type,
         "japanese": japanese,
         "english": english,
         "notes": notes,
@@ -964,6 +1080,7 @@ def main() -> None:
         notes = str(data.get("notes", "") or "")
         japanese_prompt = str(data.get("japanese_prompt", "") or "")
         english_prompt = str(data.get("english_prompt", "") or "")
+        card_type = str(data.get("card_type", "standard") or "standard")
         japanese_tts = str(data.get("japanese_tts", "") or "")
         japanese_prompt_tts = str(data.get("japanese_prompt_tts", "") or "")
         deck_name = str(data.get("deck", DECK_NAME) or DECK_NAME)
@@ -989,6 +1106,7 @@ def main() -> None:
                 "tags": tags,
                 "japanese_prompt": japanese_prompt,
                 "english_prompt": english_prompt,
+                "card_type": card_type,
                 "japanese_tts": japanese_tts,
                 "japanese_prompt_tts": japanese_prompt_tts,
                 "tts_provider": tts_provider,
@@ -1008,6 +1126,7 @@ def main() -> None:
             japanese_prompt_tts=japanese_prompt_tts,
             tts_provider=tts_provider,
             tts_model=tts_model,
+            card_type=card_type,
         )
 
         print(json.dumps(result, ensure_ascii=False, indent=2))

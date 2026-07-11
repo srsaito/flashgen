@@ -35,6 +35,12 @@ CARD FIELDS (tool arguments — omit optional ones unless needed):
 - `japanese_prompt` / `english_prompt` — only for Response cards (a reply to a
   situation); include both or neither
 - `japanese_prompt_tts` — only when `japanese_prompt` is present
+- `card_type` — "standard" (default; omit it) or "dialog_response". Use
+  "dialog_response" when the user wants to internalize the appropriate response
+  to a SPOKEN situation (場面 practice): it creates exactly ONE card with an
+  audio-only prompt on the front (no text) and the prompt text + response on
+  the back. Requires `japanese_prompt`. A standard card with a prompt instead
+  creates three cards (listening, production, response with prompt text shown).
 - `tts_provider` / `tts_model` — omit unless the user forces a backend; if set,
   include both (gemini ↔ a Gemini TTS model, openai ↔ gpt-4o-mini-tts). Default is Gemini.
 

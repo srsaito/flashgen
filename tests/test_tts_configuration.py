@@ -307,6 +307,7 @@ class TTSConfigurationTests(unittest.TestCase):
             japanese_prompt_tts=payload["japanese_prompt_tts"],
             tts_provider=None,
             tts_model=None,
+            card_type="standard",
         )
         rendered = json.loads(stdout.getvalue())
         self.assertEqual(rendered["japanese_tts"], payload["japanese_tts"])
