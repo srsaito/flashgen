@@ -76,11 +76,15 @@ _CARD_INPUT_SCHEMA = {
             "type": "string",
             "enum": ["standard", "dialog_response"],
             "description": (
-                "standard (default): up to three cards (listening, production, "
-                "and — when a prompt is given — response). dialog_response: exactly "
-                "one card to internalize the appropriate response to a spoken "
-                "situation — audio-only prompt on the front, prompt text + response "
-                "on the back; requires japanese_prompt."
+                "standard (default): Japanese Listening+Production note — 2 cards "
+                "(listening, production), or 3 when a prompt is given (adds "
+                "prompt→response; the prompt is context, the response is the "
+                "learning target). dialog_response: Japanese Dialog Response note — "
+                "exactly 1 card for memorizing a two-sentence sequence, the building "
+                "block of a dialog: audio-only prompt on the front, prompt text + "
+                "response on the back, so hearing sentence N trains producing "
+                "sentence N+1 (both sentences and their order are learning targets); "
+                "requires japanese_prompt."
             ),
         },
     },

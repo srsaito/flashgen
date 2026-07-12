@@ -35,12 +35,39 @@ CARD FIELDS (tool arguments — omit optional ones unless needed):
 - `japanese_prompt` / `english_prompt` — only for Response cards (a reply to a
   situation); include both or neither
 - `japanese_prompt_tts` — only when `japanese_prompt` is present
-- `card_type` — "standard" (default; omit it) or "dialog_response". Use
-  "dialog_response" when the user wants to internalize the appropriate response
-  to a SPOKEN situation (場面 practice): it creates exactly ONE card with an
-  audio-only prompt on the front (no text) and the prompt text + response on
-  the back. Requires `japanese_prompt`. A standard card with a prompt instead
-  creates three cards (listening, production, response with prompt text shown).
+- `card_type` — "standard" (default; omit it) or "dialog_response". See the
+  scenarios below for which to use.
+
+NOTE TYPES & CARD SCENARIOS (pick by the user's learning goal):
+
+FlashGen writes to two Anki note types, selected by `card_type` plus whether
+the prompt fields are filled. Three scenarios:
+
+1. STANDARD card — omit `card_type`, omit the prompt fields.
+   Note type: Japanese Listening+Production → 2 cards:
+   (a) Listening: response audio → comprehend it
+   (b) Production: English → produce the Japanese
+   Purpose: memorize a standalone phrase/sentence on its own (vocabulary,
+   narration, explanations).
+
+2. PROMPT-RESPONSE card — omit `card_type`, fill `japanese_prompt` /
+   `english_prompt`.
+   Note type: Japanese Listening+Production → 3 cards: the two above, plus
+   (c) Response: see + hear the prompt → produce the response.
+   Purpose: still learning the RESPONSE. The prompt (e.g. a simple question)
+   is context only, not itself a learning target.
+
+3. DIALOG-RESPONSE card — `card_type: "dialog_response"`, `japanese_prompt`
+   required.
+   Note type: Japanese Dialog Response → exactly 1 card: front is the prompt
+   AUDIO ONLY (no text); the learner recalls and produces the next sentence.
+   Back shows the prompt text (self-check that it was heard correctly) plus
+   the response.
+   Purpose: memorize a TWO-SENTENCE SEQUENCE — the building block of a dialog.
+   Reciting sentence N builds the reflex of producing sentence N+1, so an
+   entire dialog (sentence order and chaining) can be learned as a chain of
+   these cards. Unlike scenario 2, BOTH sentences are learning targets,
+   especially their ordering.
 - `tts_provider` / `tts_model` — omit unless the user forces a backend; if set,
   include both (gemini ↔ a Gemini TTS model, openai ↔ gpt-4o-mini-tts). Default is Gemini.
 
