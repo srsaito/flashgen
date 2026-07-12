@@ -76,15 +76,19 @@ _CARD_INPUT_SCHEMA = {
             "type": "string",
             "enum": ["standard", "dialog_response"],
             "description": (
-                "standard (default): Japanese Listening+Production note — 2 cards "
-                "(listening, production), or 3 when a prompt is given (adds "
-                "prompt→response; the prompt is context, the response is the "
-                "learning target). dialog_response: Japanese Dialog Response note — "
-                "exactly 1 card for memorizing a two-sentence sequence, the building "
-                "block of a dialog: audio-only prompt on the front, prompt text + "
-                "response on the back, so hearing sentence N trains producing "
-                "sentence N+1 (both sentences and their order are learning targets); "
-                "requires japanese_prompt."
+                "Selects the note type by learning goal. standard (default) writes "
+                "a Japanese Listening+Production note. Without prompt fields → "
+                "2 cards (hear audio→comprehend; see English→produce Japanese), "
+                "for memorizing a standalone phrase on its own. With "
+                "japanese_prompt/english_prompt → 3 cards (those two plus "
+                "see+hear prompt→produce response), for internalizing the RESPONSE "
+                "to a situational prompt — the prompt is context, not a learning "
+                "target. dialog_response writes a Japanese Dialog Response note — "
+                "exactly 1 card: audio-only prompt on the front, prompt text + "
+                "response on the back — for memorizing a two-sentence dialog "
+                "sequence: hearing sentence N trains producing sentence N+1, and "
+                "both sentences and their order are learning targets. Chain such "
+                "cards to learn an entire dialog. Requires japanese_prompt."
             ),
         },
     },
@@ -248,10 +252,38 @@ _TOOLS = [
     },
 ]
 
+# Served in the initialize response every session; clients add it to the
+# model's context. Covers what tools/list does NOT carry: workflow discipline
+# and field-value formatting rules. Card-type selection lives in the card_type
+# schema description. Keep tight — this costs context every session.
+_SERVER_INSTRUCTIONS = """\
+FlashGen creates Japanese Anki flashcards (see the card_type field for the
+three card scenarios and the learning goal each serves).
+
+WORKFLOW: build the card fields → validate_flashcard (normalizes furigana,
+creates nothing) → show the user the FULL validated JSON in a fenced code
+block → ask before create_flashcard. First check duplicates via search_notes.
+If create fails with deck-not-found, the error lists the available decks.
+
+FORMATTING (field values are parsed — deviations are errors):
+- Furigana: each annotated unit is written as space+kanji[reading] with
+  exactly ONE leading ASCII space, e.g. " 写真[しゃしん]" or per-kanji
+  " 写[しゃ] 真[しん]". Never annotate hiragana, katakana, or punctuation.
+  Applies to japanese, japanese_prompt, and notes.
+- japanese_tts / japanese_prompt_tts: plain Japanese, NO furigana markup;
+  replace only TTS-risky readings (names, jukujikun, rare compounds) with
+  hiragana and keep the rest in normal kanji/kana.
+- japanese_prompt / english_prompt: include both or neither.
+- notes: short definitions of non-obvious words; separate entries with \\n.
+- Never use double quotes (\") inside field values; quote Japanese with 「」.
+- tags: always include "auto"; add descriptive tags as appropriate.
+"""
+
 _SERVER_INFO = {
     "protocolVersion": "2025-03-26",
     "capabilities": {"tools": {}},
     "serverInfo": {"name": "FlashGen MCP", "version": "0.1.0"},
+    "instructions": _SERVER_INSTRUCTIONS,
 }
 
 
