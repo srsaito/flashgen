@@ -103,7 +103,7 @@ DIALOG_MODEL_CSS = """\
 .card {
   font-family: arial;
   font-size: 20px;
-  text-align: center;
+  text-align: left;
   color: black;
   background-color: white;
 }
