@@ -275,6 +275,11 @@ FORMATTING (field values are parsed — deviations are errors):
   hiragana and keep the rest in normal kanji/kana.
 - japanese_prompt / english_prompt: include both or neither.
 - notes: short definitions of non-obvious words; separate entries with \\n.
+- Inline emphasis in any text field: <b> <strong> <i> <em> <u> only, no
+  attributes; other markup renders as literal text. Tags must be balanced and
+  must wrap WHOLE furigana units ("<b> 栄養[えいよう]</b>", never a tag
+  boundary inside " kanji[reading]"). Emphasis and line breaks never reach
+  TTS audio.
 - Never use double quotes (\") inside field values; quote Japanese with 「」.
 - tags: always include "auto"; add descriptive tags as appropriate.
 """
@@ -295,13 +300,34 @@ def _is_missing_api_key(msg: str) -> bool:
     return "_API_KEY" in msg and "is not set" in msg
 
 
-def _validate_args(args: dict) -> dict:
-    """Run the validate logic and return a result dict."""
-    req = CardRequest(**args)
+def _validate_card(req: CardRequest) -> dict:
+    """Shared validate logic: normalize furigana and report markup problems.
+
+    markup_errors (unbalanced emphasis, tag splitting a furigana unit) make
+    the card invalid — create_flashcard would reject it. markup_warnings
+    (non-allowlisted tags) render as literal text but are not rejected.
+    """
     japanese = flashgen.normalize_furigana_text(req.japanese)
     japanese_prompt = flashgen.normalize_furigana_text(req.japanese_prompt)
-    return {
-        "status": "ok",
+
+    markup_errors: dict[str, list[str]] = {}
+    markup_warnings: dict[str, list[str]] = {}
+    for label, value in (
+        ("japanese", req.japanese),
+        ("english", req.english),
+        ("notes", req.notes),
+        ("japanese_prompt", req.japanese_prompt),
+        ("english_prompt", req.english_prompt),
+    ):
+        errors = flashgen.markup_errors(value)
+        warnings = flashgen.markup_warnings(value)
+        if errors:
+            markup_errors[label] = errors
+        if warnings:
+            markup_warnings[label] = warnings
+
+    result = {
+        "status": "invalid" if markup_errors else "ok",
         "japanese": japanese,
         "english": req.english,
         "notes": req.notes,
@@ -315,6 +341,16 @@ def _validate_args(args: dict) -> dict:
         "tts_model": req.tts_model,
         "card_type": req.card_type,
     }
+    if markup_errors:
+        result["markup_errors"] = markup_errors
+    if markup_warnings:
+        result["markup_warnings"] = markup_warnings
+    return result
+
+
+def _validate_args(args: dict) -> dict:
+    """Run the validate logic and return a result dict."""
+    return _validate_card(CardRequest(**args))
 
 
 def _create_args(args: dict) -> dict:
@@ -561,23 +597,7 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
 
     @app.post("/validate")
     async def validate(req: CardRequest) -> dict:
-        japanese = flashgen.normalize_furigana_text(req.japanese)
-        japanese_prompt = flashgen.normalize_furigana_text(req.japanese_prompt)
-        return {
-            "status": "ok",
-            "japanese": japanese,
-            "english": req.english,
-            "notes": req.notes,
-            "tags": req.tags,
-            "deck": req.deck,
-            "japanese_tts": req.japanese_tts,
-            "japanese_prompt": japanese_prompt,
-            "english_prompt": req.english_prompt,
-            "japanese_prompt_tts": req.japanese_prompt_tts,
-            "tts_provider": req.tts_provider,
-            "tts_model": req.tts_model,
-            "card_type": req.card_type,
-        }
+        return _validate_card(req)
 
     @app.post("/create")
     async def create(req: CardRequest) -> JSONResponse:

@@ -187,6 +187,11 @@ class TestFieldTextBreaks:
         info = note_info(1, english="type &lt;br&gt; here")
         assert flashgen._field_text(info, "English") == "type <br> here"
 
+    def test_emphasis_tags_dropped_in_matching(self):
+        # A query word can match across an emphasis tag boundary.
+        info = note_info(1, japanese="えい<b>よう</b>")
+        assert flashgen._matches_word(info, "えいよう", "japanese_tts") is True
+
 
 class TestFindExistingNotesQuery:
     def test_newline_and_br_sanitized_in_dup_query(self):
@@ -358,6 +363,31 @@ class TestUpdateNote:
         assert mock_tts.call_args.args[1] == "はい。 元気です。"
         sent = fake.params_of("updateNoteFields")[0]["note"]["fields"]
         assert sent["Japanese"] == "はい。<br> 元気[げんき]です。"
+
+    def test_emphasis_renders_but_never_reaches_tts(self):
+        fake = update_fake(japanese="犬")
+        with patch("flashgen.anki_invoke", fake), \
+             patch("flashgen.generate_tts_file") as mock_tts, \
+             patch("flashgen.store_media_file", return_value="e.wav"):
+            flashgen.update_note(5, fields={"japanese": "えい<b> 養[よう]</b>"})
+        assert mock_tts.call_args.args[1] == "えい養"
+        sent = fake.params_of("updateNoteFields")[0]["note"]["fields"]
+        assert sent["Japanese"] == "えい<b> 養[よう]</b>"
+
+    def test_unbalanced_emphasis_rejected_before_any_anki_call(self):
+        fake = update_fake()
+        with patch("flashgen.anki_invoke", fake):
+            with pytest.raises(RuntimeError, match="Invalid markup in 'english'"):
+                flashgen.update_note(5, fields={"english": "<i>oops"})
+        assert fake.calls == []
+
+    def test_tts_regen_from_stored_field_containing_emphasis(self):
+        fake = update_fake(japanese="えい<b> 養[よう]</b>")
+        with patch("flashgen.anki_invoke", fake), \
+             patch("flashgen.generate_tts_file") as mock_tts, \
+             patch("flashgen.store_media_file", return_value="f.wav"):
+            flashgen.update_note(5, fields={"japanese_tts": ""})
+        assert mock_tts.call_args.args[1] == "えい養"
 
     def test_tts_regen_from_stored_field_containing_br(self):
         # GH #4 trap 2: display text recovered from the stored HTML field must

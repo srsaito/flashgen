@@ -1,6 +1,6 @@
 """Coverage for flashgen.py engine logic — safety net before the refactor.
 
-Covers: field_to_html, resolve_tts_config error paths, anki_invoke error
+Covers: rich_text_to_html, resolve_tts_config error paths, anki_invoke error
 response, check_anki_ready validation, AnkiConnect helper unexpected responses,
 generate_tts_file missing API keys, fill_missing_translation, and the
 add_note duplicate-note path.
@@ -12,54 +12,138 @@ import flashgen
 
 
 # ---------------------------------------------------------------------------
-# field_to_html (formerly notes_to_html — now applied to all display fields,
-# GH #4 / flashgen-qgg)
+# rich_text_to_html (formerly notes_to_html — now applied to all display
+# fields with line breaks (GH #4 / flashgen-qgg) and an inline-emphasis tag
+# allowlist (GH #5 / flashgen-c9a))
 # ---------------------------------------------------------------------------
 
-class TestFieldToHtml:
+class TestRichTextToHtml:
     def test_empty_returns_empty(self):
-        assert flashgen.field_to_html("") == ""
-        assert flashgen.field_to_html("   ") == ""
+        assert flashgen.rich_text_to_html("") == ""
+        assert flashgen.rich_text_to_html("   ") == ""
 
     def test_plain_text_is_returned(self):
-        assert flashgen.field_to_html("hello") == "hello"
+        assert flashgen.rich_text_to_html("hello") == "hello"
 
     def test_newlines_become_br(self):
-        assert flashgen.field_to_html("line1\nline2") == "line1<br>line2"
+        assert flashgen.rich_text_to_html("line1\nline2") == "line1<br>line2"
 
-    def test_html_chars_are_escaped(self):
-        result = flashgen.field_to_html("<b>bold</b> & more")
-        assert "<b>" not in result
+    def test_non_allowlisted_html_is_escaped(self):
+        result = flashgen.rich_text_to_html("<span>styled</span> & more")
+        assert "<span>" not in result
         assert "&amp;" in result
-        assert "&lt;" in result
+        assert "&lt;span&gt;" in result
 
     def test_literal_br_tags_become_real_br(self):
         # MCP clients send line breaks as literal <br> tags. These must render
         # as breaks, not escape into the visible text "&lt;br&gt;" (flashgen-3c6).
-        assert flashgen.field_to_html("a<br>b") == "a<br>b"
-        assert flashgen.field_to_html("a<br/>b") == "a<br>b"
-        assert flashgen.field_to_html("a<br />b") == "a<br>b"
-        assert flashgen.field_to_html("a<BR>b") == "a<br>b"
+        assert flashgen.rich_text_to_html("a<br>b") == "a<br>b"
+        assert flashgen.rich_text_to_html("a<br/>b") == "a<br>b"
+        assert flashgen.rich_text_to_html("a<br />b") == "a<br>b"
+        assert flashgen.rich_text_to_html("a<BR>b") == "a<br>b"
 
     def test_literal_backslash_n_becomes_br(self):
         # A literal two-char backslash-n (not a real newline) must also convert.
-        assert flashgen.field_to_html("a\\nb") == "a<br>b"
-        assert flashgen.field_to_html("a\\r\\nb") == "a<br>b"
+        assert flashgen.rich_text_to_html("a\\nb") == "a<br>b"
+        assert flashgen.rich_text_to_html("a\\r\\nb") == "a<br>b"
 
     def test_crlf_becomes_single_br(self):
-        assert flashgen.field_to_html("a\r\nb") == "a<br>b"
+        assert flashgen.rich_text_to_html("a\r\nb") == "a<br>b"
 
     def test_html_chars_still_escaped_with_br_input(self):
         # Genuine HTML-special chars in the definition stay escaped even when
         # the caller uses <br> for breaks.
-        result = flashgen.field_to_html("cost < 5 & up<br>line2")
+        result = flashgen.rich_text_to_html("cost < 5 & up<br>line2")
         assert result == "cost &lt; 5 &amp; up<br>line2"
 
     def test_furigana_annotation_survives_around_breaks(self):
         # The leading space of an annotated unit after a break must survive so
         # {{furigana:...}} still recognizes the unit.
-        result = flashgen.field_to_html("はい。<br> 元気[げんき]です。")
+        result = flashgen.rich_text_to_html("はい。<br> 元気[げんき]です。")
         assert result == "はい。<br> 元気[げんき]です。"
+
+
+# ---------------------------------------------------------------------------
+# Inline emphasis allowlist (GH #5 / flashgen-c9a)
+# ---------------------------------------------------------------------------
+
+class TestEmphasisRendering:
+    def test_allowlisted_tags_render(self):
+        assert flashgen.rich_text_to_html("えい<b>よう</b>") == "えい<b>よう</b>"
+        assert flashgen.rich_text_to_html("<strong>x</strong>") == "<strong>x</strong>"
+        assert flashgen.rich_text_to_html("<i>x</i> <em>y</em>") == "<i>x</i> <em>y</em>"
+        assert flashgen.rich_text_to_html("<u>x</u>") == "<u>x</u>"
+
+    def test_tags_canonicalized_to_lowercase(self):
+        assert flashgen.rich_text_to_html("<B>x</B>") == "<b>x</b>"
+
+    def test_math_angle_brackets_stay_literal(self):
+        # "< b >" with interior whitespace is not a tag — comparison text in an
+        # English gloss must not be swallowed as markup.
+        result = flashgen.rich_text_to_html("a < b > c")
+        assert result == "a &lt; b &gt; c"
+        assert flashgen.markup_errors("a < b > c") == []
+
+    def test_tag_with_attribute_is_escaped_not_stripped(self):
+        result = flashgen.rich_text_to_html('<b class="x">y</b>')
+        assert result.startswith("&lt;b class=")
+        assert "y</b>" in result  # the bare closing tag is still allowlisted
+
+    def test_emphasis_composes_with_breaks_and_escaping(self):
+        result = flashgen.rich_text_to_html("cost < 5 & <b>up</b>\nline2")
+        assert result == "cost &lt; 5 &amp; <b>up</b><br>line2"
+
+    def test_emphasis_wrapping_whole_furigana_unit_survives(self):
+        result = flashgen.rich_text_to_html("<b> 栄養[えいよう]</b>です")
+        assert result == "<b> 栄養[えいよう]</b>です"
+
+
+class TestMarkupErrors:
+    def test_clean_text_has_no_errors(self):
+        assert flashgen.markup_errors("えい<b>よう</b>と 営業[えいぎょう]") == []
+        assert flashgen.markup_errors("") == []
+
+    def test_unclosed_tag_reported(self):
+        problems = flashgen.markup_errors("<b>bold")
+        assert any("unclosed <b>" in p for p in problems)
+
+    def test_stray_closing_tag_reported(self):
+        problems = flashgen.markup_errors("bold</b>")
+        assert any("unbalanced </b>" in p for p in problems)
+
+    def test_misnested_tags_reported(self):
+        assert flashgen.markup_errors("<b><i>x</b></i>") != []
+
+    def test_tag_inside_annotated_unit_rejected(self):
+        problems = flashgen.markup_errors(" 漢<b>字[かんじ]</b>")
+        assert any("splits the annotated unit" in p for p in problems)
+
+    def test_tag_between_kanji_and_reading_rejected(self):
+        problems = flashgen.markup_errors(" 漢字<b>[かんじ]</b>")
+        assert any("splits the annotated unit" in p for p in problems)
+
+    def test_tag_wrapping_whole_unit_accepted(self):
+        assert flashgen.markup_errors("<b> 漢字[かんじ]</b>") == []
+        # Boundary in the unit's leading spaces is also fine.
+        assert flashgen.markup_errors(" <b> 漢字[かんじ]</b>") == []
+        assert flashgen.markup_errors("<b>漢字[かんじ]</b>") == []
+
+    def test_non_allowlisted_markup_is_not_an_error(self):
+        assert flashgen.markup_errors("<span>x</span>") == []
+
+
+class TestMarkupWarnings:
+    def test_non_allowlisted_tag_warned(self):
+        warnings = flashgen.markup_warnings("<span>x</span>")
+        assert len(warnings) == 2  # open + close
+        assert "literal text" in warnings[0]
+
+    def test_attributed_allowlisted_tag_warned(self):
+        warnings = flashgen.markup_warnings('<b class="x">y</b>')
+        assert len(warnings) == 1
+
+    def test_clean_emphasis_and_br_not_warned(self):
+        assert flashgen.markup_warnings("a<br><b>x</b>") == []
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +202,45 @@ class TestCreateFlashcardBreakIntake:
         note = next(p for a, p in calls if a == "addNote")["note"]
         assert note["fields"]["Japanese"] == "はい。<br> 元気[げんき]です。"
         assert note["fields"]["English"] == "Yes.<br>I'm fine."
+
+    def test_emphasis_renders_but_never_reaches_tts_or_filename(self):
+        calls = []
+
+        def invoke(action, params=None):
+            calls.append((action, params))
+            return {
+                "version": 6,
+                "deckNames": [flashgen.DECK_NAME],
+                "modelNames": [flashgen.MODEL_NAME],
+                "modelFieldNames": ["Japanese", "English", "Notes", "Audio"],
+                "canAddNotes": [True],
+                "addNote": 112,
+            }[action]
+
+        with patch("flashgen.anki_invoke", side_effect=invoke), \
+             patch("flashgen.generate_tts_file") as mock_tts, \
+             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+            result = flashgen.create_flashcard(
+                japanese="えい<b> 養[よう]</b>",
+                english="<i>nutrition</i>",
+            )
+
+        assert mock_tts.call_args.args[1] == "えい養"
+        assert "b" != result["audio_file"][:1]
+        assert "<" not in result["audio_file"]
+        note = next(p for a, p in calls if a == "addNote")["note"]
+        assert note["fields"]["Japanese"] == "えい<b> 養[よう]</b>"
+        assert note["fields"]["English"] == "<i>nutrition</i>"
+
+    def test_unbalanced_emphasis_rejected_before_any_anki_call(self):
+        with patch("flashgen.anki_invoke") as mock_invoke:
+            with pytest.raises(RuntimeError, match="Invalid markup in 'japanese'"):
+                flashgen.create_flashcard(japanese="えい<b>よう", english="x")
+        mock_invoke.assert_not_called()
+
+    def test_mid_unit_emphasis_rejected(self):
+        with pytest.raises(RuntimeError, match="splits the annotated unit"):
+            flashgen.create_flashcard(japanese=" 漢<b>字[かんじ]</b>", english="x")
 
 
 # ---------------------------------------------------------------------------

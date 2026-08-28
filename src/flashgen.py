@@ -203,9 +203,11 @@ def strip_furigana_markup(text: str) -> str:
 def resolve_tts_input(display_text: str, tts_text: str = "") -> str:
     candidate = tts_text if tts_text.strip() else strip_furigana_markup(display_text)
     candidate = unicodedata.normalize("NFC", sanitize_text(candidate))
-    # Break markup must never reach TTS: the text is spoken and feeds the
-    # audio filename stem. Display fields may carry <br>/newlines, and the
-    # update-time regen path recovers display text from the stored HTML field.
+    # Markup must never reach TTS: the text is spoken and feeds the audio
+    # filename stem. Display fields may carry <br>/newlines/emphasis tags, and
+    # the update-time regen path recovers display text from the stored HTML
+    # field, so strip breaks and emphasis here rather than trusting callers.
+    candidate = strip_emphasis_markup(candidate)
     candidate = _NEWLINE_RUN_RE.sub(" ", normalize_line_breaks(candidate))
     return strip_furigana_markup(candidate).strip()
 
@@ -218,6 +220,90 @@ _BR_TAG_RE = re.compile(r"<\s*br\s*/?\s*>", re.IGNORECASE)
 
 _NEWLINE_RUN_RE = re.compile(r"\s*\n\s*")
 
+# Inline emphasis allowlist (GH #5 / flashgen-c9a). Attributes are not
+# permitted: a tag carrying any attribute fails this regex and is escaped as
+# literal text rather than silently stripped. Deliberately no interior
+# whitespace either, so English gloss text like "a < b > c" stays literal.
+_EMPHASIS_TAG_RE = re.compile(r"<(/?)(b|strong|i|em|u)>", re.IGNORECASE)
+_EMPHASIS_PLACEHOLDER_RE = re.compile("\x00(/?)(b|strong|i|em|u)\x00")
+
+# Anything else that looks like an HTML tag (letter right after "<", so
+# comparison text like "a < b > c" is ignored) — reported by validation as
+# markup that will render as literal text.
+_OTHER_TAG_RE = re.compile(r"</?[a-zA-Z][^<>]*>")
+
+
+def strip_emphasis_markup(text: str) -> str:
+    return _EMPHASIS_TAG_RE.sub("", text)
+
+
+def _reject_bad_markup(**fields: str) -> None:
+    """Reject unbalanced/unit-splitting emphasis rather than emitting broken
+    HTML into a note. Keys are request-level field names for the message."""
+    for label, value in fields.items():
+        problems = markup_errors(value)
+        if problems:
+            raise RuntimeError(f"Invalid markup in '{label}': " + "; ".join(problems))
+
+
+def markup_errors(text: str) -> list[str]:
+    """Hard markup problems: unbalanced emphasis tags, or a tag boundary
+    inside an annotated ' kanji[reading]' unit (which would break the furigana
+    regex and silently lose the annotation). Create/update reject on these."""
+    problems: list[str] = []
+    if not text:
+        return problems
+    text = normalize_line_breaks(text)
+
+    stack: list[str] = []
+    for match in _EMPHASIS_TAG_RE.finditer(text):
+        name = match.group(2).lower()
+        if not match.group(1):
+            stack.append(name)
+        elif stack and stack[-1] == name:
+            stack.pop()
+        else:
+            problems.append(f"unbalanced </{name}> tag")
+    problems.extend(f"unclosed <{name}> tag" for name in stack)
+
+    # Map each tag's position into the tag-stripped text, then flag any tag
+    # that lands strictly inside an annotated unit's kanji-run + reading.
+    # A boundary in the unit's leading spaces or right before the first kanji
+    # is fine — furigana normalization re-emits the leading space inside the
+    # tag.
+    stripped_parts: list[str] = []
+    tag_positions: list[tuple[int, str]] = []
+    last = pos = 0
+    for match in _EMPHASIS_TAG_RE.finditer(text):
+        stripped_parts.append(text[last:match.start()])
+        pos += match.start() - last
+        tag_positions.append((pos, match.group(0)))
+        last = match.end()
+    stripped_parts.append(text[last:])
+    stripped = "".join(stripped_parts)
+    for match in ANNOTATED_KANJI_RE.finditer(stripped):
+        unit = stripped[match.start(1):match.end()]
+        for tag_pos, tag in tag_positions:
+            if match.start(1) < tag_pos < match.end():
+                problems.append(
+                    f"emphasis tag {tag} splits the annotated unit 「{unit}」 — "
+                    "emphasis must wrap whole ' kanji[reading]' units"
+                )
+    return problems
+
+
+def markup_warnings(text: str) -> list[str]:
+    """Non-allowlisted markup: rendered as visible literal text, which is
+    rarely what the caller meant. Reported by validation, never rejected."""
+    if not text:
+        return []
+    remaining = strip_emphasis_markup(normalize_line_breaks(text))
+    return [
+        f"unsupported markup {match.group(0)!r} will render as literal text "
+        "(allowed tags: <b> <strong> <i> <em> <u> <br>, no attributes)"
+        for match in _OTHER_TAG_RE.finditer(remaining)
+    ]
+
 
 def normalize_line_breaks(text: str) -> str:
     """Funnel every break representation to a real newline. Callers vary:
@@ -229,18 +315,24 @@ def normalize_line_breaks(text: str) -> str:
     return text
 
 
-def field_to_html(text: str) -> str:
-    """Render a display field to Anki HTML: escape markup, render line breaks.
+def rich_text_to_html(text: str) -> str:
+    """Render a display field to Anki HTML: line breaks and allowlisted
+    emphasis tags (<b> <strong> <i> <em> <u>) render; everything else is
+    escaped to literal text.
 
-    Applied to every text field (Japanese/English/Prompt/Notes). Breaks are
-    normalized to newlines before escaping so genuine HTML-special chars stay
-    escaped while breaks still render.
+    Applied to every text field (Japanese/English/Prompt/Notes). Allowed tags
+    are swapped for \\x00 placeholders before html.escape (sanitize_text has
+    already removed any real control chars) and re-emitted lowercase after.
     """
     if not text.strip():
         return ""
 
     text = normalize_line_breaks(sanitize_text(text))
+    text = _EMPHASIS_TAG_RE.sub(
+        lambda m: f"\x00{m.group(1)}{m.group(2).lower()}\x00", text
+    )
     escaped = html.escape(text, quote=False)
+    escaped = _EMPHASIS_PLACEHOLDER_RE.sub(r"<\1\2>", escaped)
     return escaped.replace("\n", "<br>")
 
 
@@ -346,7 +438,9 @@ def can_add_note(note: dict[str, Any]) -> bool:
 
 
 def find_existing_notes(model_name: str, japanese: str) -> list[int]:
-    # Fields may contain line breaks; an Anki search string must stay one line.
+    # Fields may contain markup; an Anki search string must stay one line and
+    # the stored-field match is saner without emphasis tags.
+    japanese = strip_emphasis_markup(japanese)
     japanese = _NEWLINE_RUN_RE.sub(" ", normalize_line_breaks(japanese))
     query = f'note:"{model_name}" "Japanese:{japanese}"'
     result = anki_invoke("findNotes", {"query": query})
@@ -571,14 +665,14 @@ def add_note(
     audio_prompt_filename: str = "",
 ) -> int:
     fields = {
-        "Japanese": field_to_html(japanese),
-        "English": field_to_html(english),
-        "Notes": field_to_html(notes),
+        "Japanese": rich_text_to_html(japanese),
+        "English": rich_text_to_html(english),
+        "Notes": rich_text_to_html(notes),
         "Audio": f"[sound:{audio_filename}]",
     }
     if japanese_prompt:
-        fields["Japanese Prompt"] = field_to_html(japanese_prompt)
-        fields["English Prompt"] = field_to_html(english_prompt)
+        fields["Japanese Prompt"] = rich_text_to_html(japanese_prompt)
+        fields["English Prompt"] = rich_text_to_html(english_prompt)
         fields["Audio Prompt"] = f"[sound:{audio_prompt_filename}]"
 
     note: dict[str, Any] = {
@@ -636,6 +730,14 @@ def create_flashcard(
 ) -> dict[str, Any]:
     if card_type not in CARD_TYPES:
         raise RuntimeError(f"'card_type' must be one of: {', '.join(CARD_TYPES)}.")
+
+    _reject_bad_markup(
+        japanese=japanese,
+        english=english,
+        notes=notes,
+        japanese_prompt=japanese_prompt,
+        english_prompt=english_prompt,
+    )
 
     final_tags = tags if tags is not None else DEFAULT_TAGS
     tts_config = resolve_tts_config(tts_provider, tts_model)
@@ -852,10 +954,11 @@ def _note_entry(
 def _field_text(info: dict[str, Any], field_name: str) -> str:
     cell = (info.get("fields") or {}).get(field_name)
     value = cell.get("value", "") if isinstance(cell, dict) else ""
-    # Stored fields may contain real <br> tags; treat them as spacing so
-    # matching sees the field as one line. Substitute BEFORE unescaping so
-    # user-visible "&lt;br&gt;" text is not mistaken for markup.
-    return html.unescape(_BR_TAG_RE.sub(" ", value))
+    # Stored fields may contain real <br>/emphasis tags: treat <br> as spacing
+    # and drop emphasis so a query word can match across a tag boundary.
+    # Substitute BEFORE unescaping so user-visible "&lt;br&gt;" text is not
+    # mistaken for markup.
+    return html.unescape(strip_emphasis_markup(_BR_TAG_RE.sub(" ", value)))
 
 
 def _matches_word(info: dict[str, Any], word: str, match_field: str) -> bool:
@@ -1010,25 +1113,29 @@ def update_note(
     ):
         raise RuntimeError("'tags' must be a list of strings.")
 
+    _reject_bad_markup(
+        **{k: v for k, v in fields.items() if not k.endswith("_tts")}
+    )
+
     current = get_note(note_id)  # raises if the note doesn't exist
 
     anki_fields: dict[str, str] = {}
     japanese = None
     if "japanese" in fields:
         japanese = normalize_furigana_text(normalize_line_breaks(fields["japanese"]))
-        anki_fields["Japanese"] = field_to_html(japanese)
+        anki_fields["Japanese"] = rich_text_to_html(japanese)
     if "english" in fields:
-        anki_fields["English"] = field_to_html(fields["english"])
+        anki_fields["English"] = rich_text_to_html(fields["english"])
     if "notes" in fields:
-        anki_fields["Notes"] = field_to_html(fields["notes"])
+        anki_fields["Notes"] = rich_text_to_html(fields["notes"])
     japanese_prompt = None
     if "japanese_prompt" in fields:
         japanese_prompt = normalize_furigana_text(
             normalize_line_breaks(fields["japanese_prompt"])
         )
-        anki_fields["Japanese Prompt"] = field_to_html(japanese_prompt)
+        anki_fields["Japanese Prompt"] = rich_text_to_html(japanese_prompt)
     if "english_prompt" in fields:
-        anki_fields["English Prompt"] = field_to_html(fields["english_prompt"])
+        anki_fields["English Prompt"] = rich_text_to_html(fields["english_prompt"])
 
     # Changing Japanese text (or its TTS override) invalidates the stored audio,
     # so regenerate — including Audio Prompt for prompt changes (dialog cards are

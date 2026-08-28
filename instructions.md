@@ -97,6 +97,12 @@ OTHER RULES:
 - Line breaks: \n, real newlines, and <br> are all accepted in every text field
   ("japanese", "english", "notes", the prompt fields) and render as line breaks
   in Anki (normalized server-side) — prefer \n. Breaks never reach TTS audio.
+- Inline emphasis: <b>, <strong>, <i>, <em>, <u> are allowed in every text field
+  (no attributes — a tag with attributes renders as literal text). Any other
+  markup is escaped to literal text. Emphasis never reaches TTS audio.
+- Emphasis MUST wrap whole furigana units: `<b> 栄養[えいよう]</b>` is valid;
+  a tag boundary inside " kanji[reading]" (e.g. ` 栄<b>養[えいよう]</b>`) is
+  rejected, as are unbalanced tags.
 - NEVER include double quotes (") inside field values
 
 DISCIPLINE:

@@ -91,3 +91,48 @@ class TestValidateEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert body["japanese_prompt"] == " 写真[しゃしん]を 撮影[さつえい]しましたか？"
+
+
+class TestValidateMarkupReporting:
+    """GH #5 / flashgen-c9a: validate reports emphasis-markup problems."""
+
+    def test_clean_emphasis_is_ok_with_no_markup_keys(self):
+        response = client.post(
+            "/validate",
+            json={"japanese": "えい<b>よう</b>", "english": "nutrition"},
+        )
+        body = response.json()
+        assert body["status"] == "ok"
+        assert "markup_errors" not in body
+        assert "markup_warnings" not in body
+
+    def test_unbalanced_tag_reported_as_invalid(self):
+        response = client.post(
+            "/validate",
+            json={"japanese": "えい<b>よう", "english": "nutrition"},
+        )
+        body = response.json()
+        assert body["status"] == "invalid"
+        assert any("unclosed <b>" in p for p in body["markup_errors"]["japanese"])
+
+    def test_tag_splitting_furigana_unit_reported_as_invalid(self):
+        response = client.post(
+            "/validate",
+            json={"japanese": " 漢<b>字[かんじ]</b>", "english": "kanji"},
+        )
+        body = response.json()
+        assert body["status"] == "invalid"
+        assert any(
+            "splits the annotated unit" in p
+            for p in body["markup_errors"]["japanese"]
+        )
+
+    def test_non_allowlisted_markup_warned_but_still_ok(self):
+        response = client.post(
+            "/validate",
+            json={"japanese": "はい", "english": "<span>yes</span>"},
+        )
+        body = response.json()
+        assert body["status"] == "ok"
+        assert "markup_warnings" in body
+        assert "english" in body["markup_warnings"]

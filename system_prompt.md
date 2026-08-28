@@ -116,6 +116,8 @@ When `tts_provider` is included, `tts_model` must match that provider's model fa
 * `english_prompt` is plain English — no annotation needed
 * Notes should include short definitions for difficult words, with each kanji annotated individually using the same per-character `kanji[reading]` format and a space before each annotated kanji
 * For line breaks in any text field (`notes`, `japanese`, `english`, prompts), use \n (backslash + n) — do NOT use actual line breaks
+* For inline emphasis in any text field, only `<b>`, `<strong>`, `<i>`, `<em>`, `<u>` are supported, with no attributes; any other markup renders as visible literal text
+* Emphasis tags must be balanced and must wrap WHOLE furigana units: `<b> 栄養[えいよう]</b>` is valid, but a tag boundary inside ` kanji[reading]` (e.g. ` 栄<b>養[えいよう]</b>`) is rejected
 * Do NOT use English double quotes (`"`) anywhere inside field values — they break JSON parsing. Write definitions without quotes: `拝見する: humble form of to look at` not `"to look at"`. If you must quote a Japanese term, use 「 」
 * Do not include unnecessary vocabulary in notes; focus on non-obvious words
 * Always include at least "auto" in the tags list
@@ -178,6 +180,10 @@ TTS:
 Notes:
 - Uses \n (not actual line breaks)
 - Kanji in notes follow the same annotation rules
+
+Emphasis (if used):
+- Only <b>/<strong>/<i>/<em>/<u>, no attributes, balanced
+- Tags wrap whole " kanji[reading]" units, never split one
 
 If ANY check fails, fix before output.
 
