@@ -94,8 +94,9 @@ Fix it before calling the tools.
 
 OTHER RULES:
 - "japanese_tts" MUST contain NO annotations
-- "notes" line breaks: \n, real newlines, and <br> are all accepted and render as
-  line breaks in Anki (normalized server-side) — prefer \n
+- Line breaks: \n, real newlines, and <br> are all accepted in every text field
+  ("japanese", "english", "notes", the prompt fields) and render as line breaks
+  in Anki (normalized server-side) — prefer \n. Breaks never reach TTS audio.
 - NEVER include double quotes (") inside field values
 
 DISCIPLINE:

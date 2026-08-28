@@ -115,7 +115,7 @@ When `tts_provider` is included, `tts_model` must match that provider's model fa
 * In `_tts` fields, replace only the kanji that are likely to be misread by TTS (names, rare readings, jukujikun) with hiragana and leave the rest of the sentence in normal kanji/kana mix so prosody stays natural
 * `english_prompt` is plain English — no annotation needed
 * Notes should include short definitions for difficult words, with each kanji annotated individually using the same per-character `kanji[reading]` format and a space before each annotated kanji
-* In the `notes` field, use \n (backslash + n) for line breaks — do NOT use actual line breaks
+* For line breaks in any text field (`notes`, `japanese`, `english`, prompts), use \n (backslash + n) — do NOT use actual line breaks
 * Do NOT use English double quotes (`"`) anywhere inside field values — they break JSON parsing. Write definitions without quotes: `拝見する: humble form of to look at` not `"to look at"`. If you must quote a Japanese term, use 「 」
 * Do not include unnecessary vocabulary in notes; focus on non-obvious words
 * Always include at least "auto" in the tags list

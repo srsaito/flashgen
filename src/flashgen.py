@@ -203,29 +203,44 @@ def strip_furigana_markup(text: str) -> str:
 def resolve_tts_input(display_text: str, tts_text: str = "") -> str:
     candidate = tts_text if tts_text.strip() else strip_furigana_markup(display_text)
     candidate = unicodedata.normalize("NFC", sanitize_text(candidate))
+    # Break markup must never reach TTS: the text is spoken and feeds the
+    # audio filename stem. Display fields may carry <br>/newlines, and the
+    # update-time regen path recovers display text from the stored HTML field.
+    candidate = _NEWLINE_RUN_RE.sub(" ", normalize_line_breaks(candidate))
     return strip_furigana_markup(candidate).strip()
 
 
-# Line-break representations a caller may supply in the notes field. Anki
-# fields are HTML: only <br> renders a break, so every break form must funnel
-# to a real newline BEFORE html.escape (otherwise a literal <br> escapes into
-# the visible text "&lt;br&gt;"), then back to <br> after escaping.
+# Line-break representations a caller may supply in text fields. Anki fields
+# are HTML: only <br> renders a break, so every break form must funnel to a
+# real newline BEFORE html.escape (otherwise a literal <br> escapes into the
+# visible text "&lt;br&gt;"), then back to <br> after escaping.
 _BR_TAG_RE = re.compile(r"<\s*br\s*/?\s*>", re.IGNORECASE)
 
+_NEWLINE_RUN_RE = re.compile(r"\s*\n\s*")
 
-def notes_to_html(notes: str) -> str:
-    if not notes.strip():
+
+def normalize_line_breaks(text: str) -> str:
+    """Funnel every break representation to a real newline. Callers vary:
+    the local CLI sends real newlines, MCP clients send literal <br> tags or
+    escaped "\\n" sequences."""
+    text = _BR_TAG_RE.sub("\n", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+    return text
+
+
+def field_to_html(text: str) -> str:
+    """Render a display field to Anki HTML: escape markup, render line breaks.
+
+    Applied to every text field (Japanese/English/Prompt/Notes). Breaks are
+    normalized to newlines before escaping so genuine HTML-special chars stay
+    escaped while breaks still render.
+    """
+    if not text.strip():
         return ""
 
-    notes = sanitize_text(notes)
-    # Normalize all break representations to a real newline up front. Callers
-    # vary: the local CLI sends real newlines, MCP clients send literal <br>
-    # tags or escaped "\n" sequences. Doing this before escaping keeps genuine
-    # HTML-special chars in definitions safe while still rendering breaks.
-    notes = _BR_TAG_RE.sub("\n", notes)
-    notes = notes.replace("\r\n", "\n").replace("\r", "\n")
-    notes = notes.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
-    escaped = html.escape(notes, quote=False)
+    text = normalize_line_breaks(sanitize_text(text))
+    escaped = html.escape(text, quote=False)
     return escaped.replace("\n", "<br>")
 
 
@@ -331,6 +346,8 @@ def can_add_note(note: dict[str, Any]) -> bool:
 
 
 def find_existing_notes(model_name: str, japanese: str) -> list[int]:
+    # Fields may contain line breaks; an Anki search string must stay one line.
+    japanese = _NEWLINE_RUN_RE.sub(" ", normalize_line_breaks(japanese))
     query = f'note:"{model_name}" "Japanese:{japanese}"'
     result = anki_invoke("findNotes", {"query": query})
     if not isinstance(result, list):
@@ -554,14 +571,14 @@ def add_note(
     audio_prompt_filename: str = "",
 ) -> int:
     fields = {
-        "Japanese": html.escape(sanitize_text(japanese), quote=False),
-        "English": html.escape(sanitize_text(english), quote=False),
-        "Notes": notes_to_html(notes),
+        "Japanese": field_to_html(japanese),
+        "English": field_to_html(english),
+        "Notes": field_to_html(notes),
         "Audio": f"[sound:{audio_filename}]",
     }
     if japanese_prompt:
-        fields["Japanese Prompt"] = html.escape(sanitize_text(japanese_prompt), quote=False)
-        fields["English Prompt"] = html.escape(sanitize_text(english_prompt), quote=False)
+        fields["Japanese Prompt"] = field_to_html(japanese_prompt)
+        fields["English Prompt"] = field_to_html(english_prompt)
         fields["Audio Prompt"] = f"[sound:{audio_prompt_filename}]"
 
     note: dict[str, Any] = {
@@ -644,8 +661,10 @@ def create_flashcard(
         client = OpenAI(api_key=api_key)
         japanese, english = fill_missing_translation(client, japanese, english)
 
-    japanese = normalize_furigana_text(japanese)
-    japanese_prompt = normalize_furigana_text(japanese_prompt)
+    # Normalize breaks at intake, before the TTS inputs are derived below, so
+    # literal <br>/"\n" from a caller never reach TTS text or audio filenames.
+    japanese = normalize_furigana_text(normalize_line_breaks(japanese))
+    japanese_prompt = normalize_furigana_text(normalize_line_breaks(japanese_prompt))
     japanese_tts = resolve_tts_input(japanese, japanese_tts)
     japanese_prompt_tts = resolve_tts_input(japanese_prompt, japanese_prompt_tts)
 
@@ -833,7 +852,10 @@ def _note_entry(
 def _field_text(info: dict[str, Any], field_name: str) -> str:
     cell = (info.get("fields") or {}).get(field_name)
     value = cell.get("value", "") if isinstance(cell, dict) else ""
-    return html.unescape(value)
+    # Stored fields may contain real <br> tags; treat them as spacing so
+    # matching sees the field as one line. Substitute BEFORE unescaping so
+    # user-visible "&lt;br&gt;" text is not mistaken for markup.
+    return html.unescape(_BR_TAG_RE.sub(" ", value))
 
 
 def _matches_word(info: dict[str, Any], word: str, match_field: str) -> bool:
@@ -993,22 +1015,20 @@ def update_note(
     anki_fields: dict[str, str] = {}
     japanese = None
     if "japanese" in fields:
-        japanese = normalize_furigana_text(fields["japanese"])
-        anki_fields["Japanese"] = html.escape(sanitize_text(japanese), quote=False)
+        japanese = normalize_furigana_text(normalize_line_breaks(fields["japanese"]))
+        anki_fields["Japanese"] = field_to_html(japanese)
     if "english" in fields:
-        anki_fields["English"] = html.escape(sanitize_text(fields["english"]), quote=False)
+        anki_fields["English"] = field_to_html(fields["english"])
     if "notes" in fields:
-        anki_fields["Notes"] = notes_to_html(fields["notes"])
+        anki_fields["Notes"] = field_to_html(fields["notes"])
     japanese_prompt = None
     if "japanese_prompt" in fields:
-        japanese_prompt = normalize_furigana_text(fields["japanese_prompt"])
-        anki_fields["Japanese Prompt"] = html.escape(
-            sanitize_text(japanese_prompt), quote=False
+        japanese_prompt = normalize_furigana_text(
+            normalize_line_breaks(fields["japanese_prompt"])
         )
+        anki_fields["Japanese Prompt"] = field_to_html(japanese_prompt)
     if "english_prompt" in fields:
-        anki_fields["English Prompt"] = html.escape(
-            sanitize_text(fields["english_prompt"]), quote=False
-        )
+        anki_fields["English Prompt"] = field_to_html(fields["english_prompt"])
 
     # Changing Japanese text (or its TTS override) invalidates the stored audio,
     # so regenerate — including Audio Prompt for prompt changes (dialog cards are
@@ -1018,6 +1038,8 @@ def update_note(
     if regen_main or regen_prompt:
         tts_config = resolve_tts_config(tts_provider, tts_model)
     if regen_main:
+        # Recovering display text from the stored HTML field leaves real <br>
+        # tags in place; resolve_tts_input normalizes them away before TTS.
         display = (
             japanese
             if japanese is not None

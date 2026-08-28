@@ -1,6 +1,6 @@
 """Coverage for flashgen.py engine logic — safety net before the refactor.
 
-Covers: notes_to_html, resolve_tts_config error paths, anki_invoke error
+Covers: field_to_html, resolve_tts_config error paths, anki_invoke error
 response, check_anki_ready validation, AnkiConnect helper unexpected responses,
 generate_tts_file missing API keys, fill_missing_translation, and the
 add_note duplicate-note path.
@@ -12,22 +12,23 @@ import flashgen
 
 
 # ---------------------------------------------------------------------------
-# notes_to_html
+# field_to_html (formerly notes_to_html — now applied to all display fields,
+# GH #4 / flashgen-qgg)
 # ---------------------------------------------------------------------------
 
-class TestNotesToHtml:
+class TestFieldToHtml:
     def test_empty_returns_empty(self):
-        assert flashgen.notes_to_html("") == ""
-        assert flashgen.notes_to_html("   ") == ""
+        assert flashgen.field_to_html("") == ""
+        assert flashgen.field_to_html("   ") == ""
 
     def test_plain_text_is_returned(self):
-        assert flashgen.notes_to_html("hello") == "hello"
+        assert flashgen.field_to_html("hello") == "hello"
 
     def test_newlines_become_br(self):
-        assert flashgen.notes_to_html("line1\nline2") == "line1<br>line2"
+        assert flashgen.field_to_html("line1\nline2") == "line1<br>line2"
 
     def test_html_chars_are_escaped(self):
-        result = flashgen.notes_to_html("<b>bold</b> & more")
+        result = flashgen.field_to_html("<b>bold</b> & more")
         assert "<b>" not in result
         assert "&amp;" in result
         assert "&lt;" in result
@@ -35,24 +36,88 @@ class TestNotesToHtml:
     def test_literal_br_tags_become_real_br(self):
         # MCP clients send line breaks as literal <br> tags. These must render
         # as breaks, not escape into the visible text "&lt;br&gt;" (flashgen-3c6).
-        assert flashgen.notes_to_html("a<br>b") == "a<br>b"
-        assert flashgen.notes_to_html("a<br/>b") == "a<br>b"
-        assert flashgen.notes_to_html("a<br />b") == "a<br>b"
-        assert flashgen.notes_to_html("a<BR>b") == "a<br>b"
+        assert flashgen.field_to_html("a<br>b") == "a<br>b"
+        assert flashgen.field_to_html("a<br/>b") == "a<br>b"
+        assert flashgen.field_to_html("a<br />b") == "a<br>b"
+        assert flashgen.field_to_html("a<BR>b") == "a<br>b"
 
     def test_literal_backslash_n_becomes_br(self):
         # A literal two-char backslash-n (not a real newline) must also convert.
-        assert flashgen.notes_to_html("a\\nb") == "a<br>b"
-        assert flashgen.notes_to_html("a\\r\\nb") == "a<br>b"
+        assert flashgen.field_to_html("a\\nb") == "a<br>b"
+        assert flashgen.field_to_html("a\\r\\nb") == "a<br>b"
 
     def test_crlf_becomes_single_br(self):
-        assert flashgen.notes_to_html("a\r\nb") == "a<br>b"
+        assert flashgen.field_to_html("a\r\nb") == "a<br>b"
 
     def test_html_chars_still_escaped_with_br_input(self):
         # Genuine HTML-special chars in the definition stay escaped even when
         # the caller uses <br> for breaks.
-        result = flashgen.notes_to_html("cost < 5 & up<br>line2")
+        result = flashgen.field_to_html("cost < 5 & up<br>line2")
         assert result == "cost &lt; 5 &amp; up<br>line2"
+
+    def test_furigana_annotation_survives_around_breaks(self):
+        # The leading space of an annotated unit after a break must survive so
+        # {{furigana:...}} still recognizes the unit.
+        result = flashgen.field_to_html("はい。<br> 元気[げんき]です。")
+        assert result == "はい。<br> 元気[げんき]です。"
+
+
+# ---------------------------------------------------------------------------
+# resolve_tts_input — breaks must never reach TTS text (GH #4 / flashgen-qgg)
+# ---------------------------------------------------------------------------
+
+class TestResolveTtsInputBreaks:
+    def test_newline_in_display_becomes_space(self):
+        assert flashgen.resolve_tts_input("こんにちは\n元気？") == "こんにちは 元気？"
+
+    def test_literal_br_in_display_becomes_space(self):
+        assert flashgen.resolve_tts_input("こんにちは<br>元気？") == "こんにちは 元気？"
+
+    def test_br_in_explicit_tts_override_becomes_space(self):
+        assert flashgen.resolve_tts_input("表示", "こんにちは<br/>元気？") == "こんにちは 元気？"
+
+    def test_break_with_furigana_display(self):
+        assert (
+            flashgen.resolve_tts_input("はい。<br> 元気[げんき]です。")
+            == "はい。 元気です。"
+        )
+
+
+# ---------------------------------------------------------------------------
+# create_flashcard break intake (GH #4 / flashgen-qgg)
+# ---------------------------------------------------------------------------
+
+class TestCreateFlashcardBreakIntake:
+    def test_breaks_render_in_fields_but_never_reach_tts_or_filename(self):
+        calls = []
+
+        def invoke(action, params=None):
+            calls.append((action, params))
+            return {
+                "version": 6,
+                "deckNames": [flashgen.DECK_NAME],
+                "modelNames": [flashgen.MODEL_NAME],
+                "modelFieldNames": ["Japanese", "English", "Notes", "Audio"],
+                "canAddNotes": [True],
+                "addNote": 111,
+            }[action]
+
+        with patch("flashgen.anki_invoke", side_effect=invoke), \
+             patch("flashgen.generate_tts_file") as mock_tts, \
+             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+            result = flashgen.create_flashcard(
+                japanese="はい。<br> 元気[げんき]です。",
+                english="Yes.\nI'm fine.",
+            )
+
+        tts_text = mock_tts.call_args.args[1]
+        assert tts_text == "はい。 元気です。"
+        assert "<br" not in result["audio_file"]
+        assert "\n" not in result["audio_file"]
+
+        note = next(p for a, p in calls if a == "addNote")["note"]
+        assert note["fields"]["Japanese"] == "はい。<br> 元気[げんき]です。"
+        assert note["fields"]["English"] == "Yes.<br>I'm fine."
 
 
 # ---------------------------------------------------------------------------

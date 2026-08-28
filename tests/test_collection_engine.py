@@ -175,6 +175,29 @@ class TestSearchNotesFuriganaMatching:
         assert result["count"] == 0
 
 
+class TestFieldTextBreaks:
+    def test_br_in_stored_field_treated_as_space_in_matching(self):
+        # A stored <br> reads as spacing, which Japanese despaced matching
+        # ignores — so a query word can still match across a line break.
+        info = note_info(1, japanese="はい<br>そうです")
+        assert flashgen._matches_word(info, "はいそうです", "japanese_tts") is True
+
+    def test_escaped_br_text_is_not_treated_as_markup(self):
+        # User-visible "&lt;br&gt;" text must survive as literal "<br>".
+        info = note_info(1, english="type &lt;br&gt; here")
+        assert flashgen._field_text(info, "English") == "type <br> here"
+
+
+class TestFindExistingNotesQuery:
+    def test_newline_and_br_sanitized_in_dup_query(self):
+        fake = FakeAnki({"findNotes": []})
+        with patch("flashgen.anki_invoke", fake):
+            flashgen.find_existing_notes("M", "a\nb<br>c")
+        query = fake.params_of("findNotes")[0]["query"]
+        assert "\n" not in query
+        assert "<br>" not in query
+
+
 class TestSearchNotesResults:
     def test_limit_and_truncated(self):
         infos = [note_info(i, japanese=f"猫{i}") for i in range(1, 4)]
@@ -313,6 +336,38 @@ class TestUpdateNote:
         assert sent["Japanese Prompt"] == " 何[なに]をしますか"
         assert sent["Audio Prompt"] == "[sound:p.wav]"
         assert "Audio" not in sent
+
+    def test_breaks_render_in_non_notes_fields(self):
+        # GH #4 / flashgen-qgg: every display field renders line breaks, not
+        # just Notes.
+        fake = update_fake(japanese="猫")
+        with patch("flashgen.anki_invoke", fake), \
+             patch("flashgen.generate_tts_file") as mock_tts:
+            flashgen.update_note(5, fields={"english": "a\nb", "english_prompt": "c<br>d"})
+        mock_tts.assert_not_called()
+        sent = fake.params_of("updateNoteFields")[0]["note"]["fields"]
+        assert sent["English"] == "a<br>b"
+        assert sent["English Prompt"] == "c<br>d"
+
+    def test_japanese_break_renders_but_never_reaches_tts(self):
+        fake = update_fake(japanese="犬")
+        with patch("flashgen.anki_invoke", fake), \
+             patch("flashgen.generate_tts_file") as mock_tts, \
+             patch("flashgen.store_media_file", return_value="x.wav"):
+            flashgen.update_note(5, fields={"japanese": "はい。<br> 元気[げんき]です。"})
+        assert mock_tts.call_args.args[1] == "はい。 元気です。"
+        sent = fake.params_of("updateNoteFields")[0]["note"]["fields"]
+        assert sent["Japanese"] == "はい。<br> 元気[げんき]です。"
+
+    def test_tts_regen_from_stored_field_containing_br(self):
+        # GH #4 trap 2: display text recovered from the stored HTML field must
+        # not feed literal <br> to TTS when only the override changes.
+        fake = update_fake(japanese="はい。<br> 元気[げんき]です。")
+        with patch("flashgen.anki_invoke", fake), \
+             patch("flashgen.generate_tts_file") as mock_tts, \
+             patch("flashgen.store_media_file", return_value="y.wav"):
+            flashgen.update_note(5, fields={"japanese_tts": ""})
+        assert mock_tts.call_args.args[1] == "はい。 元気です。"
 
     def test_tags_replaced_with_diff(self):
         fake = update_fake(tags=["jp", "old"])
