@@ -275,6 +275,9 @@ FORMATTING (field values are parsed — deviations are errors):
   hiragana and keep the rest in normal kanji/kana.
 - japanese_prompt / english_prompt: include both or neither.
 - notes: short definitions of non-obvious words; separate entries with \\n.
+- Line breaks in ANY text field (japanese, english, notes, prompts): use \\n
+  (preferred; real newlines and <br> also accepted) — renders as a line break
+  on the card.
 - Inline emphasis in any text field: <b> <strong> <i> <em> <u> only, no
   attributes; other markup renders as literal text. Tags must be balanced and
   must wrap WHOLE furigana units ("<b> 栄養[えいよう]</b>", never a tag
