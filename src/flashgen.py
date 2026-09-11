@@ -193,6 +193,43 @@ def normalize_furigana_text(text: str) -> str:
     )
 
 
+# Anki renders Japanese / Japanese Prompt / Notes through {{furigana:...}}.
+# That filter splits the field on ASCII spaces and makes EVERYTHING before the
+# "[" in a chunk the ruby base, so a bracket that is not a reading still steals
+# whatever precedes it: `[13:42]` renders 13:42 as ruby over the backtick, and
+# "remodeling（和製[わせい]" puts わせい over "remodeling（和製". Normalization
+# re-emits the leading space for kanji-run units, which fixes the second shape;
+# this check catches the first, which no normalization can rescue.
+_STRAY_BRACKET_RE = re.compile(r"(\S*?)\[([^\]]*)\]")
+
+
+def furigana_errors(text: str) -> list[str]:
+    """Brackets in a furigana-rendered field that Anki will mis-parse as ruby.
+
+    Run AFTER normalize_furigana_text: a well-formed annotation is then always
+    a space-delimited pure-kanji run, so anything else is a stray bracket that
+    would silently render as ruby over the wrong characters.
+    """
+    problems: list[str] = []
+    if not text:
+        return problems
+    for chunk in normalize_line_breaks(text).replace("\n", " ").split(" "):
+        match = _STRAY_BRACKET_RE.match(chunk)
+        if not match:
+            continue
+        base, reading = match.group(1), match.group(2)
+        if base and ANNOTATED_KANJI_RE.fullmatch(f" {base}[{reading}]"):
+            continue
+        shown = chunk[: len(base) + len(reading) + 2]
+        if not base:
+            problems.append(f"bracket with no kanji before it: {shown}")
+        else:
+            problems.append(
+                f"[...] would render as ruby over non-kanji text: {shown}"
+            )
+    return problems
+
+
 def strip_furigana_markup(text: str) -> str:
     if not text:
         return ""
@@ -767,6 +804,9 @@ def create_flashcard(
     # literal <br>/"\n" from a caller never reach TTS text or audio filenames.
     japanese = normalize_furigana_text(normalize_line_breaks(japanese))
     japanese_prompt = normalize_furigana_text(normalize_line_breaks(japanese_prompt))
+    # Notes is rendered with {{furigana:Notes}} too, so it needs the same
+    # leading-space normalization (omitted until 2026-09-11).
+    notes = normalize_furigana_text(normalize_line_breaks(notes))
     japanese_tts = resolve_tts_input(japanese, japanese_tts)
     japanese_prompt_tts = resolve_tts_input(japanese_prompt, japanese_prompt_tts)
 
@@ -1127,7 +1167,9 @@ def update_note(
     if "english" in fields:
         anki_fields["English"] = rich_text_to_html(fields["english"])
     if "notes" in fields:
-        anki_fields["Notes"] = rich_text_to_html(fields["notes"])
+        anki_fields["Notes"] = rich_text_to_html(
+            normalize_furigana_text(normalize_line_breaks(fields["notes"]))
+        )
     japanese_prompt = None
     if "japanese_prompt" in fields:
         japanese_prompt = normalize_furigana_text(

@@ -303,6 +303,10 @@ def _is_missing_api_key(msg: str) -> bool:
     return "_API_KEY" in msg and "is not set" in msg
 
 
+# Fields the Anki templates render with {{furigana:...}}.
+_FURIGANA_FIELDS = ("japanese", "japanese_prompt", "notes")
+
+
 def _validate_card(req: CardRequest) -> dict:
     """Shared validate logic: normalize furigana and report markup problems.
 
@@ -310,8 +314,19 @@ def _validate_card(req: CardRequest) -> dict:
     the card invalid — create_flashcard would reject it. markup_warnings
     (non-allowlisted tags) render as literal text but are not rejected.
     """
+    # Normalize every field Anki renders through {{furigana:...}} — Japanese,
+    # Japanese Prompt and Notes. Notes was omitted until 2026-09-11, so a unit
+    # written without its leading space (after "（", "<b>", a digit, a Latin
+    # letter) kept that character inside the ruby base.
     japanese = flashgen.normalize_furigana_text(req.japanese)
     japanese_prompt = flashgen.normalize_furigana_text(req.japanese_prompt)
+    notes = flashgen.normalize_furigana_text(req.notes)
+
+    normalized = {
+        "japanese": japanese,
+        "japanese_prompt": japanese_prompt,
+        "notes": notes,
+    }
 
     markup_errors: dict[str, list[str]] = {}
     markup_warnings: dict[str, list[str]] = {}
@@ -323,6 +338,8 @@ def _validate_card(req: CardRequest) -> dict:
         ("english_prompt", req.english_prompt),
     ):
         errors = flashgen.markup_errors(value)
+        if label in _FURIGANA_FIELDS:
+            errors = errors + flashgen.furigana_errors(normalized[label])
         warnings = flashgen.markup_warnings(value)
         if errors:
             markup_errors[label] = errors
@@ -333,7 +350,7 @@ def _validate_card(req: CardRequest) -> dict:
         "status": "invalid" if markup_errors else "ok",
         "japanese": japanese,
         "english": req.english,
-        "notes": req.notes,
+        "notes": notes,
         "tags": req.tags,
         "deck": req.deck,
         "japanese_tts": req.japanese_tts,

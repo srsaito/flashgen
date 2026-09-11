@@ -83,3 +83,36 @@ class FuriganaNormalizationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --- Notes is rendered with {{furigana:Notes}} too (2026-09-11) -------------
+# Until this date only Japanese / Japanese Prompt were normalized, so a unit
+# written without its leading space kept the preceding character inside the
+# ruby base: "remodeling（和製[わせい]" put わせい over "remodeling（和製".
+
+def test_notes_style_text_gets_the_leading_space():
+    from flashgen import normalize_furigana_text as n
+    assert n("remodeling（和製[わせい]") == "remodeling（ 和製[わせい]"
+    assert n("<b>辞書形[じしょけい]") == "<b> 辞書形[じしょけい]"
+    assert n("1.0・未訂正[みていせい]") == "1.0・ 未訂正[みていせい]"
+    assert n("N用[よう]") == "N 用[よう]"
+
+
+def test_furigana_errors_flags_bracketed_timestamps():
+    from flashgen import furigana_errors, normalize_furigana_text
+    # The brackets are the furigana syntax, so a timestamp in them becomes ruby
+    # over whatever precedes it — the backtick here, "m15" if it were dropped.
+    assert furigana_errors(normalize_furigana_text("録画[ろくが] m15 `[13:42]`"))
+    assert furigana_errors(normalize_furigana_text("録画[ろくが] m15 [13:42]"))
+
+
+def test_furigana_errors_passes_well_formed_text():
+    from flashgen import furigana_errors, normalize_furigana_text
+    for ok in (
+        " 震[しん] 源[げん]が 海[かい] 底[てい]です",
+        " 取[と]り 消[け]し 線[せん]",
+        "m03 13:42 訂正[ていせい]",
+        "plain english, no brackets",
+        "",
+    ):
+        assert furigana_errors(normalize_furigana_text(ok)) == []
