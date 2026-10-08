@@ -71,28 +71,73 @@ Copy `.env.example` → `.env` and fill in. Loaded by both containers via `env_f
 for the flashgen-mcp container.
 
 ## Deploy a change
-From the dev machine (run `./deploy/deploy.sh`, or manually):
+
+From the dev machine, in the repo root:
 
 ```bash
-# 1. sync code to the instance (excludes .git/.venv/.env)
-rsync -az --delete --timeout=60 -e 'ssh -o ConnectTimeout=10' \
-  --exclude='.git' --exclude='.venv' --exclude='__pycache__' --exclude='*.egg-info' \
-  --exclude='anki_audio_out' --exclude='.beads' --exclude='.env' \
-  --exclude='build' --exclude='dist' --exclude='.coverage' --exclude='.pytest_cache' \
-  ./ flashgen-mcp:/home/ubuntu/flashgen/
-
-# 2. rebuild + roll the containers (run from the deploy/ dir → compose project "deploy")
-ssh flashgen-mcp 'cd /home/ubuntu/flashgen/deploy && docker compose build && docker compose up -d'
+./deploy/deploy.sh              # flashgen-mcp only — the routine case
+./deploy/deploy.sh --check      # report what needs deploying, change nothing
+./deploy/deploy.sh --with-anki  # both services (rebuilds the ~1.6 GB anki image)
 ```
 
-Notes:
-- The **anki image is heavy** (Ubuntu + Anki + Qt6 + Chromium libs, ~1.4 GB); the first build is slow,
-  later builds reuse cached layers.
-- `entrypoint.sh` **refreshes both add-ons on every start** (Anki Connect Plus + `flashgen-sync`), so
-  image updates deploy onto the existing volume **without touching the collection**.
-- `docker compose up` stops the old container **gracefully (SIGTERM)** — important so Anki flushes state.
-- Use rsync **with `--timeout=60`** (rsync has no default I/O timeout and will hang forever on a stalled
-  SSH transport); for a single file, prefer `scp`.
+`--check` is read-only and safe to run any time. Start there if you are unsure.
+
+### Which services to deploy
+
+**The default deploys `flashgen-mcp` only, and that is correct for almost every change.**
+The compose build contexts are cleanly separated, so the rule is mechanical:
+
+| Service | Build context | Rebuild it when you changed… |
+|---|---|---|
+| `flashgen-mcp` | repo root, via `deploy/flashgen-mcp/Dockerfile` | `src/`, `pyproject.toml`, `uv.lock`, its Dockerfile — i.e. any code change |
+| `anki` | `deploy/anki-headless/` **only** | the Anki Dockerfile, `entrypoint.sh`, `seed_prefs.py`, `ankiconnect-config.json`, or the `flashgen-sync` addon |
+
+Nothing outside `deploy/anki-headless/` can affect the anki image, so a Python change
+never needs it. Leaving it alone is the safer choice: that container holds the
+collection (the `deploy_anki-data` volume), and its image is ~1.6 GB of Ubuntu + Anki +
+Qt6 + Chromium. Docs- and tests-only changes need no deploy at all.
+
+**You do not have to remember this.** `deploy.sh` checksums `deploy/anki-headless/` and
+compares it against the checksum recorded at the last anki build (stored on the host at
+`/home/ubuntu/.flashgen-anki-context-sha`, deliberately outside the rsync'd tree so
+`--delete` cannot remove it). If they differ the script **stops** rather than shipping a
+stale anki image:
+
+```
+REFUSING TO DEPLOY: deploy/anki-headless/ has changed since the last anki build.
+```
+
+Then use `--with-anki` to rebuild both, or `--force` to ship mcp-only knowing anki is
+stale. `--accept-anki` records the current context as deployed without rebuilding — for
+when you know the running image already matches (e.g. after establishing the baseline on
+an instance that predates this check).
+
+### Mechanics and gotchas
+
+- The whole tree is rsync'd either way — both build contexts live in it. Only the
+  **build** is scoped by service. `.env` and `deploy/secrets` are excluded, so host
+  secrets are never overwritten.
+- The **anki image is heavy** (~1.6 GB); the first build is slow, later builds reuse
+  cached layers. Note this is the *image* (operating system + Anki + Qt), not your data —
+  the collection itself is a ~4 MB `collection.anki2` plus the generated audio media.
+- `entrypoint.sh` **refreshes both add-ons on every start** (Anki Connect Plus +
+  `flashgen-sync`), so an anki image update deploys onto the existing volume **without
+  touching the collection**.
+- `docker compose up` stops the old container **gracefully (SIGTERM)** — important so
+  Anki flushes state.
+- rsync is run **with `--timeout=60`** (rsync has no default I/O timeout and will hang
+  forever on a stalled SSH transport); for a single file, prefer `scp`.
+- There is no deployed git SHA (the host is not a checkout), so to tell what code is live
+  use the image build date: `docker inspect flashgen-mcp:latest --format '{{.Created}}'`.
+
+### Verify after deploying
+
+```bash
+ssh flashgen-mcp 'docker inspect flashgen-mcp:latest --format "{{.Created}}"'  # today?
+ssh flashgen-mcp 'cd /home/ubuntu/flashgen/deploy && docker compose ps'        # both (healthy)
+ssh flashgen-mcp 'curl -s http://127.0.0.1:8000/health'                        # {"ok":true}
+curl -s https://mcp.ssaito.net/health                                          # via cloudflared
+```
 
 ## Operations
 ```bash
