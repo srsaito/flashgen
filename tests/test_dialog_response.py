@@ -228,7 +228,10 @@ class TestMcpDialogSurface:
         from flashgen_mcp.app import _CARD_INPUT_SCHEMA
 
         prop = _CARD_INPUT_SCHEMA["properties"]["card_type"]
-        assert set(prop["enum"]) == {"standard", "dialog_response"}
+        # Subset, not equality: later card types join this enum (cued_response,
+        # docs/SPEC-cued-response.md). What this file guards is that the dialog
+        # type stays offered, not that it is the last one added.
+        assert {"standard", "dialog_response"} <= set(prop["enum"])
 
     def test_validate_accepts_dialog_payload(self):
         response = client.post("/validate", json=DIALOG_PAYLOAD)
