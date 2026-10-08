@@ -60,9 +60,19 @@ MODEL_NAME = "Japanese Listening+Production"
 # add_note()'s field mapping is shared; exactly one card template.
 DIALOG_MODEL_NAME = "Japanese Dialog Response"
 
-CARD_TYPES = ("standard", "dialog_response")
+# Single-card cued-response note type (docs/SPEC-cued-response.md): the
+# Response card of MODEL_NAME on its own, so a prompt→response note no longer
+# generates the Listening and Production cards alongside it. Deliberately NOT
+# called prompt_response — that name already denotes the 3-card usage of
+# MODEL_NAME with the prompt fields filled.
+CUED_MODEL_NAME = "Japanese Cued Response"
 
-DIALOG_MODEL_FIELDS = [
+CARD_TYPES = ("standard", "dialog_response", "cued_response")
+
+# Shared by every FlashGen-owned note type, and identical to the legacy
+# MODEL_NAME's field set and order, so add_note()'s field mapping and the whole
+# collection read/write surface work on all three without special cases.
+GENERATED_MODEL_FIELDS = [
     "Japanese",
     "English",
     "Notes",
@@ -99,7 +109,36 @@ DIALOG_CARD_BACK = """\
 {{#Notes}}<div class="notes">{{furigana:Notes}}</div>{{/Notes}}
 """
 
-DIALOG_MODEL_CSS = """\
+# Front carries the two English cues and the prompt audio, and NO Japanese
+# text: the learner reads what situation to respond to, hears the Japanese
+# prompt, and produces the answer. Both English fields are free-form cues —
+# English Prompt may be an instruction rather than a translation, and English
+# may be a list of numbered cases — so neither is a learning target here and
+# neither ever reaches TTS.
+CUED_CARD_FRONT = """\
+<b>きっかけ</b>：{{English Prompt}}<br>
+<b>回答</b>：{{English}}<br>
+<br>
+<div>{{Audio Prompt}}</div>
+"""
+
+# Back reveals the prompt text first (did you hear it right?), then the answer
+# with its audio and notes. The English cues are already on {{FrontSide}}.
+CUED_CARD_BACK = """\
+{{FrontSide}}
+
+<hr id=answer>
+
+<b>きっかけ</b>：
+<div style="font-size: 1.4em;">{{furigana:Japanese Prompt}}</div>
+<br>
+<b>回答</b>：
+<div style="font-size: 1.4em;">{{furigana:Japanese}}</div>
+<div>{{Audio}}</div>
+{{#Notes}}<div class="notes">{{furigana:Notes}}</div>{{/Notes}}
+"""
+
+GENERATED_MODEL_CSS = """\
 .card {
   font-family: arial;
   font-size: 20px;
@@ -116,6 +155,31 @@ DIALOG_MODEL_CSS = """\
   color: #bbb;
 }
 """
+
+# The card_types whose note type FlashGen owns and creates on demand, each
+# mapped to its model name and its single card template. "standard" is absent:
+# it targets the legacy MODEL_NAME, which stays manually managed in Anki.
+# Every type here requires japanese_prompt — without the prompt audio there is
+# no front — and carries its own reason for the error message.
+GENERATED_MODELS = {
+    "dialog_response": {
+        "model_name": DIALOG_MODEL_NAME,
+        "front": DIALOG_CARD_FRONT,
+        "back": DIALOG_CARD_BACK,
+        "prompt_required_because": (
+            "the prompt audio is the entire front of the card"
+        ),
+    },
+    "cued_response": {
+        "model_name": CUED_MODEL_NAME,
+        "front": CUED_CARD_FRONT,
+        "back": CUED_CARD_BACK,
+        "prompt_required_because": (
+            "the English cues plus the prompt audio are the entire front of "
+            "the card"
+        ),
+    },
+}
 
 OUTPUT_DIR = Path("anki_audio_out")
 DEFAULT_TAGS = ["jp", "auto", "conversation"]
@@ -400,8 +464,8 @@ def anki_invoke(action: str, params: dict | None = None) -> object:
 def check_anki_ready(deck_name: str, model_name: str | None = None) -> None:
     """Verify AnkiConnect is reachable and the deck (and optionally model) exist.
 
-    model_name=None skips the note-type check — used by the dialog path, where
-    ensure_dialog_model() has already verified or created the model.
+    model_name=None skips the note-type check — used by the generated-model
+    paths, where ensure_generated_model() has already verified or created it.
     """
     version = anki_invoke("version")
     if not isinstance(version, int):
@@ -429,35 +493,48 @@ def check_anki_ready(deck_name: str, model_name: str | None = None) -> None:
         )
 
 
-def ensure_dialog_model() -> None:
-    """Create the Japanese Dialog Response note type via createModel if absent.
+def ensure_generated_model(card_type: str) -> str:
+    """Create a FlashGen-owned note type via createModel if absent; return its
+    model name.
 
     Templates live in code (single source of truth); the model syncs to
     AnkiWeb / the headless container like any other collection change. The
     legacy MODEL_NAME stays manually managed.
     """
+    spec = GENERATED_MODELS[card_type]
+    model_name = spec["model_name"]
+
     model_names = anki_invoke("modelNames")
     if not isinstance(model_names, list):
         raise RuntimeError(f"Unexpected modelNames response: {model_names!r}")
-    if DIALOG_MODEL_NAME in model_names:
-        return
+    if model_name in model_names:
+        return model_name
 
     anki_invoke(
         "createModel",
         {
-            "modelName": DIALOG_MODEL_NAME,
-            "inOrderFields": list(DIALOG_MODEL_FIELDS),
-            "css": DIALOG_MODEL_CSS,
+            "modelName": model_name,
+            "inOrderFields": list(GENERATED_MODEL_FIELDS),
+            "css": GENERATED_MODEL_CSS,
             "isCloze": False,
             "cardTemplates": [
                 {
                     "Name": "Response",
-                    "Front": DIALOG_CARD_FRONT,
-                    "Back": DIALOG_CARD_BACK,
+                    "Front": spec["front"],
+                    "Back": spec["back"],
                 }
             ],
         },
     )
+    return model_name
+
+
+def ensure_dialog_model() -> str:
+    return ensure_generated_model("dialog_response")
+
+
+def ensure_cued_model() -> str:
+    return ensure_generated_model("cued_response")
 
 
 def get_model_field_names(model_name: str) -> list[str]:
@@ -779,14 +856,17 @@ def create_flashcard(
     final_tags = tags if tags is not None else DEFAULT_TAGS
     tts_config = resolve_tts_config(tts_provider, tts_model)
 
-    if card_type == "dialog_response":
+    if card_type in GENERATED_MODELS:
         if not japanese_prompt.strip():
             raise RuntimeError(
-                "card_type 'dialog_response' requires a non-empty 'japanese_prompt' "
-                "— the prompt audio is the entire front of the card."
+                f"card_type '{card_type}' requires a non-empty 'japanese_prompt' "
+                f"— {GENERATED_MODELS[card_type]['prompt_required_because']}."
             )
-        model_name = DIALOG_MODEL_NAME
-        ensure_dialog_model()
+        # The card_type selects the note type, so the model_name kwarg does not
+        # apply. ensure_* runs before the readiness check, so a missing note
+        # type is created rather than a hard error; check_anki_ready then only
+        # has the deck left to verify.
+        model_name = ensure_generated_model(card_type)
         check_anki_ready(deck_name)
     else:
         check_anki_ready(deck_name, model_name)
