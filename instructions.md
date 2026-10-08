@@ -35,13 +35,13 @@ CARD FIELDS (tool arguments — omit optional ones unless needed):
 - `japanese_prompt` / `english_prompt` — only for Response cards (a reply to a
   situation); include both or neither
 - `japanese_prompt_tts` — only when `japanese_prompt` is present
-- `card_type` — "standard" (default; omit it) or "dialog_response". See the
-  scenarios below for which to use.
+- `card_type` — "standard" (default; omit it), "dialog_response", or
+  "cued_response". See the scenarios below for which to use.
 
 NOTE TYPES & CARD SCENARIOS (pick by the user's learning goal):
 
-FlashGen writes to two Anki note types, selected by `card_type` plus whether
-the prompt fields are filled. Three scenarios:
+FlashGen writes to three Anki note types, selected by `card_type` plus whether
+the prompt fields are filled. Four scenarios:
 
 1. STANDARD card — omit `card_type`, omit the prompt fields.
    Note type: Japanese Listening+Production → 2 cards:
@@ -68,6 +68,24 @@ the prompt fields are filled. Three scenarios:
    entire dialog (sentence order and chaining) can be learned as a chain of
    these cards. Unlike scenario 2, BOTH sentences are learning targets,
    especially their ordering.
+
+4. CUED-RESPONSE card — `card_type: "cued_response"`, `japanese_prompt` and
+   `english_prompt` required.
+   Note type: Japanese Cued Response → exactly 1 card: the front shows
+   `english_prompt` and `english` as CUES and plays the prompt audio, with NO
+   Japanese text. Back shows the Japanese prompt, then the answer with its
+   audio and notes.
+   Purpose: scenario 2's Response card ON ITS OWN. Choose it over scenario 2
+   when the Listening and Production cards are NOT wanted (they cannot be
+   switched off there — Anki generates every card the note type defines, so
+   they would have to be deleted by hand). Choose it over scenario 3 when a
+   cue is needed on the front rather than an audio-only front.
+   Contrast to keep straight: PROMPT-RESPONSE = 3 cards; CUED-RESPONSE = that
+   Response card alone, 1 card.
+   Here BOTH English fields are free-form cues and neither is ever spoken:
+   `english_prompt` may be an INSTRUCTION rather than a translation (e.g.
+   "Answer in each of the three situations below."), and `english` may be a
+   numbered list of cases matching numbered answers in `japanese`.
 - `tts_provider` / `tts_model` — omit unless the user forces a backend; if set,
   include both (gemini ↔ a Gemini TTS model, openai ↔ gpt-4o-mini-tts). Default is Gemini.
 

@@ -15,11 +15,32 @@ The project now has two front doors over the same card-generation engine:
 
 The shared design goal is that improvements to translation, furigana normalization, audio generation, and Anki card creation benefit both workflows.
 
-It communicates with the locally-running Anki application via the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on and produces up to three cards per note:
+It communicates with the locally-running Anki application via the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on. The `Japanese Listening+Production` note type produces up to three cards per note:
 
 - **Listening card** — plays the audio and asks 何を言っていますか？; the answer reveals the Japanese text, English translation, and notes.
 - **Production card** — shows the English prompt; the answer reveals the Japanese text, plays the audio, and shows notes.
 - **Response card** *(optional)* — shows an English situational prompt and plays its audio; the answer reveals both the prompt and the response in Japanese, plus the response audio. Only generated when a situational prompt is provided.
+
+### Card types
+
+The `card_type` field picks the note type by learning goal. Four scenarios, over three note types:
+
+| Scenario | `card_type` | Note type | Cards |
+|---|---|---|---|
+| **Standard** — memorize a standalone phrase | omit (`standard`) | Japanese Listening+Production | 2 (Listening, Production) |
+| **Prompt-response** — learn the response to a situation; the prompt is context | omit, plus `japanese_prompt` / `english_prompt` | Japanese Listening+Production | 3 (the two above, plus Response) |
+| **Dialog response** — learn a two-sentence sequence; both sentences matter | `dialog_response` | Japanese Dialog Response | 1 (audio-only front) |
+| **Cued response** — the Response card on its own, with cues on the front | `cued_response` | Japanese Cued Response | 1 |
+
+The two one-card types both require `japanese_prompt`: the prompt audio is (part of) the whole front.
+
+Choosing between them, and against prompt-response:
+
+- **Prompt-response gives 3 cards; cued-response gives that Response card alone.** The extra two cannot be switched off on a prompt-response note — Anki generates every card the note type defines — so they would have to be deleted by hand. `cued_response` exists for exactly that case.
+- **Dialog response has an audio-only front**, with no room for a cue. Use `cued_response` when a cue is needed on the front.
+- On a `cued_response` card, **both English fields are free-form cues shown on the front, and neither is ever spoken.** `english_prompt` may be an instruction rather than a translation ("Answer in each of the three situations below."), and `english` may be a numbered list of cases matching numbered answers in `japanese`.
+
+The two single-card note types are created automatically via AnkiConnect's `createModel` the first time one is used — their templates live in `src/flashgen.py`, so there is nothing to set up by hand. Only `Japanese Listening+Production` is created manually (see [Anki Setup](#anki-setup)). All three share the same seven fields in the same order.
 
 ---
 
@@ -128,7 +149,7 @@ The server is intended to call the same card-generation engine as the CLI. See `
 
 ## Anki Setup
 
-You need to create a Note Type with the exact name and fields that `flashgen` expects.
+You need to create one Note Type by hand, with the exact name and fields that `flashgen` expects. The two single-card note types (`Japanese Dialog Response`, `Japanese Cued Response`) are created programmatically on first use — see [Card types](#card-types).
 
 ### Create the Note Type
 
@@ -348,12 +369,13 @@ The card appears in Anki immediately, complete with TTS audio.
   "japanese_prompt": "string (optional — situational prompt in Japanese, annotated as kanji[reading])",
   "english_prompt":  "string (optional — English version of the situational prompt)",
   "japanese_prompt_tts": "string (optional — plain Japanese text used for prompt TTS; falls back to stripped japanese_prompt when omitted)",
+  "card_type":       "string (optional — standard (default), dialog_response, or cued_response; see Card types above)",
   "tts_provider":    "string (optional — openai or gemini; defaults to gemini when both TTS fields are omitted)",
   "tts_model":       "string (optional — provider-specific TTS model id such as gemini-3.1-flash-tts-preview, gemini-2.5-flash-preview-tts, or gpt-4o-mini-tts; must be provided together with tts_provider)"
 }
 ```
 
-At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` must be provided together or not at all. `tts_provider` and `tts_model` must also be provided together or not at all. If `japanese_tts` or `japanese_prompt_tts` is omitted, FlashGen falls back to the corresponding display field with furigana markup stripped. If both TTS provider fields are omitted, FlashGen defaults to Gemini TTS.
+At least one of `japanese` or `english` is required. `japanese_prompt` and `english_prompt` must be provided together or not at all, and `card_type: "dialog_response"` or `"cued_response"` requires a non-empty `japanese_prompt`. `tts_provider` and `tts_model` must also be provided together or not at all. If `japanese_tts` or `japanese_prompt_tts` is omitted, FlashGen falls back to the corresponding display field with furigana markup stripped. If both TTS provider fields are omitted, FlashGen defaults to Gemini TTS.
 
 ### Output (JSON to stdout)
 
