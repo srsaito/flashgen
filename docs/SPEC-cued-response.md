@@ -49,10 +49,17 @@ Response card alone.*
 | Fields (in order) | `Japanese`, `English`, `Notes`, `Audio`, `Japanese Prompt`, `English Prompt`, `Audio Prompt` |
 | CSS | the same CSS as `Japanese Dialog Response` |
 
-The field set and its order are **identical to the two existing models**, so
-`add_note()`'s field mapping, `search_notes`, `get_note`, `update_note`
-(including audio regeneration) and `delete_notes` all work with no special
-cases.
+The field **names** are identical to the two existing models, so `add_note()`'s
+field mapping, `search_notes`, `get_note`, `update_note` (including audio
+regeneration) and `delete_notes` all work with no special cases — all of them
+address fields by name.
+
+The order matches `Japanese Dialog Response` exactly. It does *not* match the
+legacy `Japanese Listening+Production`, which was created by hand with `Audio`
+and `Notes` transposed (verified against the live collection 2026-10-08). Field
+order only determines the field layout in Anki's note editor, so nothing
+functional rests on it, and consistency between the two generated models is
+worth more than matching the legacy model's accident.
 
 Field semantics differ from `dialog_response` in one important way: **both
 English fields are free-form cues shown on the front**, and that is the point

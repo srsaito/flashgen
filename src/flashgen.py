@@ -69,9 +69,12 @@ CUED_MODEL_NAME = "Japanese Cued Response"
 
 CARD_TYPES = ("standard", "dialog_response", "cued_response")
 
-# Shared by every FlashGen-owned note type, and identical to the legacy
-# MODEL_NAME's field set and order, so add_note()'s field mapping and the whole
-# collection read/write surface work on all three without special cases.
+# Shared by every FlashGen-owned note type. Same field NAMES as the legacy
+# MODEL_NAME, so add_note()'s mapping and the whole collection read/write
+# surface work on all three without special cases — those address fields by
+# name. The order here differs from the legacy model, which was created by hand
+# with Audio and Notes transposed; order only sets the editor's field layout,
+# so the two generated models stay consistent with each other instead.
 GENERATED_MODEL_FIELDS = [
     "Japanese",
     "English",
