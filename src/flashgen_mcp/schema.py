@@ -2,6 +2,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+# The one-card note types: the prompt audio is (part of) the whole front, so
+# there is no card without it. Mirrors flashgen.GENERATED_MODELS.
+PROMPT_REQUIRED_CARD_TYPES = ("dialog_response", "cued_response")
+
 
 class CardRequest(BaseModel):
     japanese: str = ""
@@ -15,7 +19,7 @@ class CardRequest(BaseModel):
     japanese_prompt_tts: str = ""
     tts_provider: str | None = None
     tts_model: str | None = None
-    card_type: Literal["standard", "dialog_response"] = "standard"
+    card_type: Literal["standard", "dialog_response", "cued_response"] = "standard"
 
     @model_validator(mode="after")
     def check_constraints(self) -> "CardRequest":
@@ -27,9 +31,9 @@ class CardRequest(BaseModel):
             raise ValueError(
                 "'tts_provider' and 'tts_model' must be provided together or both omitted"
             )
-        if self.card_type == "dialog_response" and not self.japanese_prompt.strip():
+        if self.card_type in PROMPT_REQUIRED_CARD_TYPES and not self.japanese_prompt.strip():
             raise ValueError(
-                "card_type 'dialog_response' requires a non-empty 'japanese_prompt'"
+                f"card_type '{self.card_type}' requires a non-empty 'japanese_prompt'"
             )
         return self
 

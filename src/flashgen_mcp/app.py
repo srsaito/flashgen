@@ -74,7 +74,7 @@ _CARD_INPUT_SCHEMA = {
         "tts_model": {"type": "string", "description": "TTS model name"},
         "card_type": {
             "type": "string",
-            "enum": ["standard", "dialog_response"],
+            "enum": ["standard", "dialog_response", "cued_response"],
             "description": (
                 "Selects the note type by learning goal. standard (default) writes "
                 "a Japanese Listening+Production note. Without prompt fields → "
@@ -88,7 +88,19 @@ _CARD_INPUT_SCHEMA = {
                 "response on the back — for memorizing a two-sentence dialog "
                 "sequence: hearing sentence N trains producing sentence N+1, and "
                 "both sentences and their order are learning targets. Chain such "
-                "cards to learn an entire dialog. Requires japanese_prompt."
+                "cards to learn an entire dialog. Requires japanese_prompt. "
+                "cued_response writes a Japanese Cued Response note — exactly 1 "
+                "card: the front shows english_prompt and english as CUES and "
+                "plays the prompt audio, with no Japanese text; the back shows "
+                "the Japanese prompt and the answer. It is the standard note's "
+                "Response card on its own, so choose it over standard-with-prompt "
+                "when the Listening and Production cards are NOT wanted, and over "
+                "dialog_response when a cue is needed on the front rather than an "
+                "audio-only front. Requires japanese_prompt. Here both English "
+                "fields are free-form cues, never spoken: english_prompt may be "
+                "an INSTRUCTION rather than a translation (e.g. 'Answer in each "
+                "of the three situations below.') and english may be a numbered "
+                "list of cases matching numbered answers in japanese."
             ),
         },
     },
@@ -258,7 +270,7 @@ _TOOLS = [
 # schema description. Keep tight — this costs context every session.
 _SERVER_INSTRUCTIONS = """\
 FlashGen creates Japanese Anki flashcards (see the card_type field for the
-three card scenarios and the learning goal each serves).
+four card scenarios and the learning goal each serves).
 
 WORKFLOW: build the card fields → validate_flashcard (normalizes furigana,
 creates nothing) → show the user the FULL validated JSON in a fenced code
