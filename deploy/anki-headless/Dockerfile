@@ -11,6 +11,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # them the GUI crashes at import with `ImportError: libsmime3.so`) plus the
 # GTK/ATK/Cairo/Pango/CUPS/ALSA Chromium runtime libs. (LANG above: Anki refuses
 # to start without a UTF-8 locale; C.UTF-8 is built into glibc, no package.)
+#
+# The snappy/opus/webp/minizip group is required from Anki 26.09 (Qt 6.11) on:
+# that Qt links QtWebEngine against those as SYSTEM libraries where Qt 6.6
+# (Anki 24.11) bundled them, so without them `import aqt.qt` dies with
+# `ImportError: libsnappy.so.1`. libpulse0/libspeechd2 back Qt's Multimedia and
+# TextToSpeech modules, and libxcursor1/libxi6/libxkbcommon0/libxrandr2 are new
+# entries in 26.09's own install.sh DEBIAN_DEPS. `git` is the AnkiConnect fetch
+# (see below) — SourceHut rejects plain tarball curls.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -56,6 +64,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatomic1 \
     libwayland-cursor0 \
     libwayland-egl1 \
+    libxcursor1 \
+    libxi6 \
+    libxkbcommon0 \
+    libxrandr2 \
+    libsnappy1v5 \
+    libopus0 \
+    libwebpdemux2 \
+    libwebpmux3 \
+    libminizip1t64 \
+    libpulse0 \
+    libspeechd2 \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install Anki (bundles Python + Qt6 — no separate Qt install needed).
@@ -63,37 +83,56 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # create the `anki` launcher symlink — but SKIP its xdg-mime desktop/MIME
 # registration. That step is useless in a headless container and requires
 # xdg-utils, without which install.sh exits 127 (`xdg-mime: command not found`).
-ARG ANKI_VERSION=24.11
-RUN curl -fsSL --retry 3 --retry-connrefused --connect-timeout 20 --max-time 600 \
-        "https://github.com/ankitects/anki/releases/download/${ANKI_VERSION}/anki-${ANKI_VERSION}-linux-qt6.tar.zst" \
-        -o /tmp/anki.tar.zst \
-    && mkdir -p /tmp/anki-src /usr/local/share/anki \
-    && tar -I zstd -xf /tmp/anki.tar.zst -C /tmp/anki-src --strip-components=1 \
-    && cp -av --no-preserve=owner,context -- /tmp/anki-src/* /usr/local/share/anki/ \
-    && ln -sf /usr/local/share/anki/anki /usr/local/bin/anki \
-    && rm -rf /tmp/anki.tar.zst /tmp/anki-src
-
-# Fetch Anki Connect Plus — a soft-fork of FooSoft AnkiConnect that supports
-# Anki 24.11 via the modern CollectionOp API. It was adopted because FooSoft's
-# GitHub repo was archived (Nov 2025) and its addNote path used removed APIs
-# (requireReset) that crash/modal on Anki 24.11. Same HTTP actions + config schema.
 #
-# CORRECTION 2026-10-15: "archived" meant RELOCATED, not abandoned. Upstream
-# AnkiConnect moved to https://git.sr.ht/~foosoft/anki-connect and is actively
-# maintained — its AnkiWeb listing (addon 2055492159) carries a 26.08+ branch
-# updated 2026-10-15. This fork, by contrast, has been dormant since 2026-02-09
-# and its listing tops out at 26.02.1+. So when bumping ANKI_VERSION above,
-# evaluate RETURNING TO UPSTREAM before assuming this fork is the only option.
-# Caveat: the SourceHut page currently returns HTTP 502 and reviewers report its
-# links dead, so a git tarball may not be fetchable — check before planning a
-# rebuild. See bead flashgen-mfb for the full upgrade plan and the safe test.
-RUN curl -fsSL --retry 3 --retry-connrefused --connect-timeout 20 --max-time 180 \
-        "https://github.com/Soki-Team/Anki-Connect-Plus/archive/refs/heads/main.tar.gz" \
-        -o /tmp/ankiconnect.tar.gz \
-    && tar -xzf /tmp/ankiconnect.tar.gz -C /tmp \
-    && mkdir -p /opt/ankiconnect \
-    && cp -r /tmp/Anki-Connect-Plus-main/plugin/. /opt/ankiconnect/ \
-    && rm -rf /tmp/ankiconnect.tar.gz /tmp/Anki-Connect-Plus-main
+# ANKI_VERSION pins the release. From 26.08 on, the Linux assets are per-arch
+# (anki-<v>-linux-{x86_64,aarch64}.tar.zst) rather than the single -linux-qt6
+# asset 24.11 shipped, so the URL is built from TARGETARCH. Production is
+# x86_64; arm64 is here so the image also builds natively on an Apple Silicon
+# Mac, which is how upgrades get rehearsed off-prod (bead flashgen-mfb).
+ARG ANKI_VERSION=26.09.3
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) ANKI_ARCH=x86_64 ;; \
+      arm64) ANKI_ARCH=aarch64 ;; \
+      *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --retry 3 --retry-connrefused --connect-timeout 20 --max-time 900 \
+        "https://github.com/ankitects/anki/releases/download/${ANKI_VERSION}/anki-${ANKI_VERSION}-linux-${ANKI_ARCH}.tar.zst" \
+        -o /tmp/anki.tar.zst; \
+    mkdir -p /tmp/anki-src /usr/local/share/anki; \
+    tar -I zstd -xf /tmp/anki.tar.zst -C /tmp/anki-src --strip-components=1; \
+    cp -av --no-preserve=owner,context -- /tmp/anki-src/* /usr/local/share/anki/; \
+    ln -sf /usr/local/share/anki/anki /usr/local/bin/anki; \
+    rm -rf /tmp/anki.tar.zst /tmp/anki-src
+
+# Fetch AnkiConnect (addon id 2055492159) from UPSTREAM.
+#
+# History worth keeping, because the obvious reading of it is wrong: FooSoft's
+# GitHub repo was archived in Nov 2025 and its addNote path used removed APIs
+# (requireReset) that crashed on Anki 24.11, so this image used to ship the
+# soft-fork Anki-Connect-Plus. But "archived" meant RELOCATED, not abandoned —
+# upstream moved to SourceHut and is now the far more active project (near-daily
+# commits, dated release tags), while the fork has been dormant since 2026-02
+# and its AnkiWeb listing tops out at 26.02.1+. requireReset is gone from
+# upstream entirely and addNote/addNotes run through an explicit legacy shim, so
+# our version:6 HTTP calls work unchanged — verified against this exact pin by
+# the probe described in bead flashgen-mfb (all 18 actions flashgen uses pass).
+#
+# Upstream's plugin/__init__.py sets required_anki_version = (26, 8, 0) and
+# RAISES below it, so this pin and ANKI_VERSION above are coupled: upstream
+# AnkiConnect cannot run on Anki 24.11, and the two must be bumped together.
+#
+# Fetched with `git`, not curl: SourceHut answers plain /archive/*.tar.gz
+# requests with HTTP 418 (anti-scraper). The tag makes this reproducible, which
+# the previous fork fetch was not — it pulled an unpinned `main` tarball.
+ARG ANKICONNECT_REF=26.10.14.0
+RUN set -eux; \
+    git clone --branch "${ANKICONNECT_REF}" --depth 1 \
+        https://git.sr.ht/~foosoft/anki-connect /tmp/anki-connect; \
+    mkdir -p /opt/ankiconnect; \
+    cp -r /tmp/anki-connect/plugin/. /opt/ankiconnect/; \
+    rm -rf /tmp/anki-connect
 
 # Override default config: bind to 0.0.0.0 so other containers on the Docker
 # network can reach AnkiConnect. Port is NOT published to the host.

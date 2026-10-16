@@ -25,19 +25,22 @@ mcp.ssaito.net ──► Cloudflare ──► cloudflared tunnel (host systemd)
                                           │ http://anki:8765  (flashgen-net, private)
                                           ▼
                            ┌─────────────────────────────┐
-                           │ flashgen-anki container      │  Xvfb + Anki 24.11 (Qt6)
-                           │  Anki Connect Plus (:8765)   │  + flashgen-sync addon
+                           │ flashgen-anki container      │  Xvfb + Anki 26.09.3 (Qt6)
+                           │  AnkiConnect (:8765)         │  + flashgen-sync addon
                            │  anki-data volume (profile)  │  ──► AnkiWeb (auto-login + sync)
                            └─────────────────────────────┘
                                           ▼
                               AnkiWeb  ◄──►  your iPhone / Desktop Anki
 ```
 
-Card flow: Claude → MCP → `create_flashcard` (TTS via Gemini/OpenAI) → Anki Connect
-Plus `addNote` → `flashgen-sync` addon auto-syncs to AnkiWeb → your devices.
+Card flow: Claude → MCP → `create_flashcard` (TTS via Gemini/OpenAI) → AnkiConnect
+`addNote` → `flashgen-sync` addon auto-syncs to AnkiWeb → your devices.
 
 ## Instance facts
-- AWS Lightsail, **Ubuntu 24.04**, **x86_64** (required — Anki's Linux build is x86_64-only), 2 vCPU / 3.7 GB RAM + **2 GB swapfile** (`/swapfile`, in `/etc/fstab`).
+- AWS Lightsail, **Ubuntu 24.04**, **x86_64**, 2 vCPU / 3.7 GB RAM + **2 GB swapfile** (`/swapfile`, in `/etc/fstab`).
+  (Anki's Linux build was x86_64-only through 24.11; from 26.08 it also ships
+  `linux-aarch64`, which is why the anki image now builds natively on an Apple
+  Silicon Mac and upgrades can be rehearsed off-prod. Production stays x86_64.)
 - Tailscale IP `100.84.134.120`. **All public Lightsail firewall ports are closed.**
 - Repo at `/home/ubuntu/flashgen` (an rsync'd copy — `.git`/`.venv`/`.env` excluded; not a git checkout).
 
@@ -120,7 +123,7 @@ an instance that predates this check).
 - The **anki image is heavy** (~1.6 GB); the first build is slow, later builds reuse
   cached layers. Note this is the *image* (operating system + Anki + Qt), not your data —
   the collection itself is a ~4 MB `collection.anki2` plus the generated audio media.
-- `entrypoint.sh` **refreshes both add-ons on every start** (Anki Connect Plus +
+- `entrypoint.sh` **refreshes both add-ons on every start** (AnkiConnect +
   `flashgen-sync`), so an anki image update deploys onto the existing volume **without
   touching the collection**.
 - `docker compose up` stops the old container **gracefully (SIGTERM)** — important so
