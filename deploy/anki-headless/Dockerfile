@@ -73,10 +73,20 @@ RUN curl -fsSL --retry 3 --retry-connrefused --connect-timeout 20 --max-time 600
     && ln -sf /usr/local/share/anki/anki /usr/local/bin/anki \
     && rm -rf /tmp/anki.tar.zst /tmp/anki-src
 
-# Fetch Anki Connect Plus — a maintained soft-fork of FooSoft AnkiConnect that
-# supports Anki 24.11 via the modern CollectionOp API. The original FooSoft repo
-# was archived (Nov 2025) and its addNote path uses removed APIs (requireReset)
-# that crash/modal on Anki 24.11. Same HTTP actions + config schema.
+# Fetch Anki Connect Plus — a soft-fork of FooSoft AnkiConnect that supports
+# Anki 24.11 via the modern CollectionOp API. It was adopted because FooSoft's
+# GitHub repo was archived (Nov 2025) and its addNote path used removed APIs
+# (requireReset) that crash/modal on Anki 24.11. Same HTTP actions + config schema.
+#
+# CORRECTION 2026-10-15: "archived" meant RELOCATED, not abandoned. Upstream
+# AnkiConnect moved to https://git.sr.ht/~foosoft/anki-connect and is actively
+# maintained — its AnkiWeb listing (addon 2055492159) carries a 26.08+ branch
+# updated 2026-10-15. This fork, by contrast, has been dormant since 2026-02-09
+# and its listing tops out at 26.02.1+. So when bumping ANKI_VERSION above,
+# evaluate RETURNING TO UPSTREAM before assuming this fork is the only option.
+# Caveat: the SourceHut page currently returns HTTP 502 and reviewers report its
+# links dead, so a git tarball may not be fetchable — check before planning a
+# rebuild. See bead flashgen-mfb for the full upgrade plan and the safe test.
 RUN curl -fsSL --retry 3 --retry-connrefused --connect-timeout 20 --max-time 180 \
         "https://github.com/Soki-Team/Anki-Connect-Plus/archive/refs/heads/main.tar.gz" \
         -o /tmp/ankiconnect.tar.gz \
