@@ -5,6 +5,13 @@ services:
     image: flashgen-anki:latest
     container_name: flashgen-anki
     restart: unless-stopped
+    # tini as PID 1, purely to reap orphans. entrypoint.sh backgrounds Xvfb (and
+    # x11vnc) and then execs anki, so nothing in this container reaps the stray
+    # members of the healthcheck pipeline below; a small fraction lose the reap
+    # race every 15s and linger as zombies. tini forwards SIGTERM to anki, so the
+    # graceful shutdown that lets Anki flush the collection is unaffected. See
+    # flashgen-b1h.
+    init: true
     # Anki's QtWebEngine (Chromium) needs more than Docker's default 64MB /dev/shm.
     shm_size: "512m"
     volumes:
@@ -54,6 +61,8 @@ services:
     image: flashgen-mcp:latest
     container_name: flashgen-mcp
     restart: unless-stopped
+    # Same reason as anki: reap the healthcheck pipeline's orphans (flashgen-b1h).
+    init: true
     depends_on:
       anki:
         condition: service_healthy
