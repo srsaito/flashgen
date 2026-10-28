@@ -98,15 +98,25 @@ bd dolt push; echo "exit=$?"      # exit=0 is the only proof
 bd dolt push || echo "PUSH FAILED" # or make the failure loud
 ```
 
-⭐ **`bd dolt push` is the specific trap.** On failure it still prints a trailing
-`Done` plus four generic credential hints, with the REAL error scrolled above them —
-so `bd dolt push | tail -5` shows `Done` and reads as success. It is not.
+**Worked example, 2026-10-28** (bead `flashgen-tr2`, bd **1.2.2**): `bd dolt push | tail -5`
+reported a trailing `Done` plus four credential hints while GitHub had actually rejected
+`refs/dolt/data` with **`GH013` push protection** — an `AKIA`-prefixed AWS access key **ID** in a
+bead's text tripped secret scanning. The real error was scrolled above the trailer. Two more pushes
+"succeeded" the same way before the full output was read; the bead data silently stayed local the
+whole time.
 
-**Worked example, 2026-10-28** (bead `flashgen-tr2`): `bd dolt push | tail -5` reported
-`Done` while GitHub had actually rejected `refs/dolt/data` with **`GH013` push
-protection** — an `AKIA`-prefixed AWS access key **ID** in a bead's text tripped secret
-scanning. Two more pushes "succeeded" the same way before the full output was read. The
-bead data silently stayed local the whole time.
+⚠️ **STATUS ON bd 1.3.2 — the trailing `Done` could NOT be reproduced**, so treat the bd-specific
+trap as fixed or at least not current. Retested 2026-10-28 after upgrading, in three failure modes:
+`--remote` that does not exist, and a forced connection failure (`HTTPS_PROXY` to a dead port) on
+both a named and the default remote. All three exited 1 **and put the error in the tail**. The one
+path NOT retested is the original: a remote that accepts the connection and then rejects the ref,
+which would mean deliberately re-introducing a secret-scanning violation. Two warts remain: the four
+credential hints still print unconditionally regardless of cause (including `ssh-add` advice for an
+HTTPS remote), so they can still make a fatal error read as advisory.
+
+**The general rule above stands regardless of bd's version** — it is an agent-discipline problem,
+not a bd problem, and it applies to `git push`, `docker push`, `terraform apply`, `npm publish` and
+any other command whose success must be read from its status. A `PreToolUse` hook enforces it.
 
 **Two follow-ons from that case:**
 - **GitHub secret scanning blocks `bd dolt push` on `AKIA`-prefixed strings** in bead
