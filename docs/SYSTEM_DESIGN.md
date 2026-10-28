@@ -28,23 +28,38 @@ tests/                   # CLI and MCP regression tests
 
 ## Engine Boundary
 
-The current reusable boundary is `flashgen.create_flashcard(...)`. The CLI already delegates to this function after parsing stdin JSON, which makes it a useful bridge for the server.
+The reusable boundary is `flashgen_core.service.create_flashcard(...)`. Both front ends — the CLI after parsing stdin JSON, and the MCP server after validating a request — delegate to it.
 
 Near term, the MCP service should call `create_flashcard(...)` directly after validating the request. If process isolation becomes necessary, the server can temporarily invoke `flashgen.py` as a subprocess with JSON over stdin, but direct function calls are preferred because they are easier to test and produce cleaner error handling.
 
-Medium term, move the reusable engine out of the CLI file into focused package modules, for example:
+The engine now lives in its own package (done in flashgen-8ik):
 
 ```text
-src/flashgen_core/schema.py       # request/result models and validation
-src/flashgen_core/furigana.py     # furigana normalization and stripping
-src/flashgen_core/anki.py         # AnkiConnect client and note creation
-src/flashgen_core/audio.py        # TTS filename and file generation
-src/flashgen_core/service.py      # create_flashcard orchestration
-flashgen.py                      # thin CLI wrapper around flashgen_core
-src/flashgen_mcp/app.py           # thin server wrapper around flashgen_core
+src/flashgen_core/config.py       # constants, note types, secrets, debug output
+src/flashgen_core/furigana.py     # furigana, markup validation, Anki HTML
+src/flashgen_core/audio.py        # TTS config, filenames, provider calls
+src/flashgen_core/anki.py         # AnkiConnect client, notes, collection search
+src/flashgen_core/service.py      # create_flashcard / update_note orchestration
+src/flashgen.py                   # thin CLI wrapper + public import surface
+src/flashgen_mcp/app.py           # server wrapper, imports flashgen_core
+src/flashgen_mcp/schema.py        # request models and validation (Pydantic)
 ```
 
-That refactor should preserve the existing CLI behavior while making the shared engine explicit.
+The layers import strictly downward — `config` depends on nothing, `service`
+depends on all of them — so there is one place per concern and no cycles.
+Request/result models stayed in `flashgen_mcp/schema.py` rather than moving to
+`flashgen_core`: they are Pydantic models describing the HTTP surface, and the
+CLI does not use them.
+
+Inside `flashgen_core`, calls into the side-effecting layers are written
+module-qualified (`anki.anki_invoke(...)`, `audio.generate_tts_file(...)`)
+rather than as bare imported names. That keeps one patch target per
+collaborator for tests, whichever module the caller lives in.
+
+`src/flashgen.py` keeps a re-export block so `import flashgen` still reaches the
+whole engine, which is what the CLI entry point and the existing tests rely on.
+New code should import the `flashgen_core` module it needs directly, as
+`flashgen_mcp.app` does.
 
 ## Request Flow
 

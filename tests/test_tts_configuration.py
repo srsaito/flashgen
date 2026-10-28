@@ -5,6 +5,9 @@ import unittest
 from unittest.mock import patch
 
 import flashgen
+import flashgen_core.anki
+import flashgen_core.service
+import flashgen_core.audio
 
 
 class TTSConfigurationTests(unittest.TestCase):
@@ -46,15 +49,15 @@ class TTSConfigurationTests(unittest.TestCase):
             return 123
 
         with patch.dict(os.environ, {"GEMINI_API_KEY": "gemini-key"}, clear=True), patch.object(
-            flashgen, "check_anki_ready"
-        ), patch.object(flashgen, "get_model_field_names", return_value=[]), patch.object(
-            flashgen, "fill_missing_translation"
+            flashgen_core.anki, "check_anki_ready"
+        ), patch.object(flashgen_core.anki, "get_model_field_names", return_value=[]), patch.object(
+            flashgen_core.service, "fill_missing_translation"
         ) as fill_missing_translation, patch.object(
-            flashgen, "generate_tts_file", side_effect=fake_generate_tts_file
+            flashgen_core.audio, "generate_tts_file", side_effect=fake_generate_tts_file
         ), patch.object(
-            flashgen, "store_media_file", side_effect=lambda _path, filename: filename
+            flashgen_core.anki, "store_media_file", side_effect=lambda _path, filename: filename
         ), patch.object(
-            flashgen, "add_note", side_effect=fake_add_note
+            flashgen_core.anki, "add_note", side_effect=fake_add_note
         ):
             result = flashgen.create_flashcard(
                 japanese="写真[しゃしん]を撮影[さつえい]しました。",
@@ -97,15 +100,15 @@ class TTSConfigurationTests(unittest.TestCase):
             )
 
         with patch.dict(os.environ, {"GEMINI_API_KEY": "gemini-key"}, clear=True), patch.object(
-            flashgen, "check_anki_ready"
-        ), patch.object(flashgen, "get_model_field_names", return_value=[]), patch.object(
-            flashgen, "fill_missing_translation", side_effect=lambda _client, japanese, english: (japanese, english)
+            flashgen_core.anki, "check_anki_ready"
+        ), patch.object(flashgen_core.anki, "get_model_field_names", return_value=[]), patch.object(
+            flashgen_core.service, "fill_missing_translation", side_effect=lambda _client, japanese, english: (japanese, english)
         ), patch.object(
-            flashgen, "generate_tts_file", side_effect=fake_generate_tts_file
+            flashgen_core.audio, "generate_tts_file", side_effect=fake_generate_tts_file
         ), patch.object(
-            flashgen, "store_media_file", side_effect=lambda _path, filename: filename
+            flashgen_core.anki, "store_media_file", side_effect=lambda _path, filename: filename
         ), patch.object(
-            flashgen, "add_note", side_effect=fake_add_note
+            flashgen_core.anki, "add_note", side_effect=fake_add_note
         ):
             result = flashgen.create_flashcard(
                 japanese="杜若[かきつばた]の花[はな]に見[み]惚[ほ]れている。",
@@ -191,15 +194,15 @@ class TTSConfigurationTests(unittest.TestCase):
             )
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "openai-key"}, clear=True), patch.object(
-            flashgen, "check_anki_ready"
-        ), patch.object(flashgen, "get_model_field_names", return_value=[]), patch.object(
-            flashgen, "fill_missing_translation", side_effect=lambda _client, japanese, english: (japanese, english)
+            flashgen_core.anki, "check_anki_ready"
+        ), patch.object(flashgen_core.anki, "get_model_field_names", return_value=[]), patch.object(
+            flashgen_core.service, "fill_missing_translation", side_effect=lambda _client, japanese, english: (japanese, english)
         ), patch.object(
-            flashgen, "generate_tts_file", side_effect=fake_generate_tts_file
+            flashgen_core.audio, "generate_tts_file", side_effect=fake_generate_tts_file
         ), patch.object(
-            flashgen, "store_media_file", side_effect=lambda _path, filename: filename
+            flashgen_core.anki, "store_media_file", side_effect=lambda _path, filename: filename
         ), patch.object(
-            flashgen, "add_note", side_effect=fake_add_note
+            flashgen_core.anki, "add_note", side_effect=fake_add_note
         ):
             result = flashgen.create_flashcard(
                 japanese="写真[しゃしん]を撮影[さつえい]しました。",
@@ -233,15 +236,15 @@ class TTSConfigurationTests(unittest.TestCase):
 
     def test_audio_filename_changes_when_tts_proxy_changes(self):
         with patch.dict(os.environ, {"GEMINI_API_KEY": "gemini-key"}, clear=True), patch.object(
-            flashgen, "check_anki_ready"
-        ), patch.object(flashgen, "get_model_field_names", return_value=[]), patch.object(
-            flashgen, "fill_missing_translation", side_effect=lambda _client, japanese, english: (japanese, english)
+            flashgen_core.anki, "check_anki_ready"
+        ), patch.object(flashgen_core.anki, "get_model_field_names", return_value=[]), patch.object(
+            flashgen_core.service, "fill_missing_translation", side_effect=lambda _client, japanese, english: (japanese, english)
         ), patch.object(
-            flashgen, "generate_tts_file"
+            flashgen_core.audio, "generate_tts_file"
         ), patch.object(
-            flashgen, "store_media_file", side_effect=lambda _path, filename: filename
+            flashgen_core.anki, "store_media_file", side_effect=lambda _path, filename: filename
         ), patch.object(
-            flashgen, "add_note", return_value=123
+            flashgen_core.anki, "add_note", return_value=123
         ):
             first = flashgen.create_flashcard(
                 japanese="杜若[かきつばた]です。",

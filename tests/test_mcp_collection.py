@@ -82,7 +82,7 @@ class TestToolDescriptors:
 class TestSearchNotesCall:
     def test_arguments_forwarded_and_result_returned(self):
         fake = {"count": 1, "truncated": False, "query": "q", "notes": [{"note_id": 1}]}
-        with patch("flashgen.search_notes", return_value=fake) as mock_search:
+        with patch("flashgen_core.anki.search_notes", return_value=fake) as mock_search:
             result = call_tool(
                 "search_notes",
                 {"query": "掃除機", "deck": "日本語-Soso", "limit": 5, "match_field": "any"},
@@ -99,7 +99,7 @@ class TestSearchNotesCall:
 
     def test_anki_unavailable_maps_to_structured_error(self):
         err = RuntimeError("Could not connect to AnkiConnect at http://x")
-        with patch("flashgen.search_notes", side_effect=err):
+        with patch("flashgen_core.anki.search_notes", side_effect=err):
             result = call_tool("search_notes", {"query": "猫"})
         assert result["isError"] is True
         assert tool_text(result)["error"] == "anki_unavailable"
@@ -107,7 +107,7 @@ class TestSearchNotesCall:
 
 class TestGetNoteCall:
     def test_forwards_note_id(self):
-        with patch("flashgen.get_note", return_value={"note_id": 42}) as mock_get:
+        with patch("flashgen_core.anki.get_note", return_value={"note_id": 42}) as mock_get:
             result = call_tool("get_note", {"note_id": 42})
         assert tool_text(result)["note_id"] == 42
         mock_get.assert_called_once_with(42)
@@ -118,7 +118,7 @@ class TestGetNoteCall:
         assert tool_text(result)["error"] == "validation_error"
 
     def test_unknown_note_id_is_engine_error(self):
-        with patch("flashgen.get_note", side_effect=RuntimeError("Note 999 not found.")):
+        with patch("flashgen_core.anki.get_note", side_effect=RuntimeError("Note 999 not found.")):
             result = call_tool("get_note", {"note_id": 999})
         assert result["isError"] is True
         assert tool_text(result)["error"] == "engine_error"
@@ -126,12 +126,12 @@ class TestGetNoteCall:
 
 class TestListCalls:
     def test_list_decks(self):
-        with patch("flashgen.list_decks", return_value=["Default", "日本語-Soso"]):
+        with patch("flashgen_core.anki.list_decks", return_value=["Default", "日本語-Soso"]):
             result = call_tool("list_decks")
         assert tool_text(result) == ["Default", "日本語-Soso"]
 
     def test_list_tags(self):
-        with patch("flashgen.list_tags", return_value=["jp", "auto"]):
+        with patch("flashgen_core.anki.list_tags", return_value=["jp", "auto"]):
             result = call_tool("list_tags")
         assert tool_text(result) == ["jp", "auto"]
 
@@ -139,7 +139,7 @@ class TestListCalls:
 class TestDeleteNotesCall:
     def test_forwards_ids(self):
         fake = {"status": "ok", "deleted": [1], "missing": []}
-        with patch("flashgen.delete_notes", return_value=fake) as mock_delete:
+        with patch("flashgen_core.anki.delete_notes", return_value=fake) as mock_delete:
             result = call_tool("delete_notes", {"note_ids": [1]})
         assert tool_text(result)["deleted"] == [1]
         mock_delete.assert_called_once_with([1])
@@ -152,7 +152,7 @@ class TestDeleteNotesCall:
 
 class TestUpdateNoteCall:
     def test_forwards_fields_tags_and_tts(self):
-        with patch("flashgen.update_note", return_value={"status": "ok"}) as mock_update:
+        with patch("flashgen_core.service.update_note", return_value={"status": "ok"}) as mock_update:
             call_tool(
                 "update_note",
                 {

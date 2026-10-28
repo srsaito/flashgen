@@ -140,7 +140,7 @@ class TestCreateFlashcardToolCall:
             "tts_model": "gpt-4o-mini-tts",
             "japanese_tts": "写真を撮りました。",
         }
-        with patch("flashgen.create_flashcard", return_value=fake_result):
+        with patch("flashgen_core.service.create_flashcard", return_value=fake_result):
             resp = client.post(
                 "/mcp",
                 json=jsonrpc(
@@ -166,7 +166,7 @@ class TestCreateFlashcardToolCall:
         import requests as req_lib
 
         with patch(
-            "flashgen.create_flashcard",
+            "flashgen_core.service.create_flashcard",
             side_effect=req_lib.exceptions.ConnectionError("refused"),
         ):
             resp = client.post(
@@ -212,7 +212,7 @@ class TestMCPBearerAuth:
 
 class TestCreateFlashcardRuntimeErrors:
     def test_anki_runtime_error_returns_anki_unavailable(self):
-        with patch("flashgen.create_flashcard", side_effect=RuntimeError("AnkiConnect unreachable")):
+        with patch("flashgen_core.service.create_flashcard", side_effect=RuntimeError("AnkiConnect unreachable")):
             resp = client.post(
                 "/mcp",
                 json=jsonrpc("tools/call", {"name": "create_flashcard", "arguments": {"japanese": "テスト", "english": "test"}}),
@@ -224,7 +224,7 @@ class TestCreateFlashcardRuntimeErrors:
         assert "anki_unavailable" in result["content"][0]["text"]
 
     def test_missing_api_key_runtime_error_returns_missing_api_key(self):
-        with patch("flashgen.create_flashcard", side_effect=RuntimeError("OPENAI_API_KEY is not set")):
+        with patch("flashgen_core.service.create_flashcard", side_effect=RuntimeError("OPENAI_API_KEY is not set")):
             resp = client.post(
                 "/mcp",
                 json=jsonrpc("tools/call", {"name": "create_flashcard", "arguments": {"japanese": "テスト", "english": "test"}}),
@@ -235,7 +235,7 @@ class TestCreateFlashcardRuntimeErrors:
         assert "missing_api_key" in result["content"][0]["text"]
 
     def test_generic_runtime_error_returns_engine_error(self):
-        with patch("flashgen.create_flashcard", side_effect=RuntimeError("something unexpected")):
+        with patch("flashgen_core.service.create_flashcard", side_effect=RuntimeError("something unexpected")):
             resp = client.post(
                 "/mcp",
                 json=jsonrpc("tools/call", {"name": "create_flashcard", "arguments": {"japanese": "テスト", "english": "test"}}),

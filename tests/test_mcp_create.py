@@ -30,7 +30,7 @@ class TestCreateEndpointSuccess:
             "tts_model": "gpt-4o-mini-tts",
             "japanese_tts": " 写[しゃ] 真[しん]を撮りました。",
         }
-        with patch("flashgen.create_flashcard", return_value=fake_result) as mock_create:
+        with patch("flashgen_core.service.create_flashcard", return_value=fake_result) as mock_create:
             response = client.post("/create", json=VALID_PAYLOAD)
 
         assert response.status_code == 200
@@ -64,7 +64,7 @@ class TestCreateEndpointSuccess:
             "tts_model": "gpt-4o-mini-tts",
             "japanese_tts": "写真を撮りました。",
         }
-        with patch("flashgen.create_flashcard", return_value=fake_result) as mock_create:
+        with patch("flashgen_core.service.create_flashcard", return_value=fake_result) as mock_create:
             response = client.post("/create", json=payload)
 
         assert response.status_code == 200
@@ -80,7 +80,7 @@ class TestCreateEndpointAnkiUnavailable:
         import requests as req_lib
 
         with patch(
-            "flashgen.create_flashcard",
+            "flashgen_core.service.create_flashcard",
             side_effect=req_lib.exceptions.ConnectionError("refused"),
         ):
             response = client.post("/create", json=VALID_PAYLOAD)
@@ -93,7 +93,7 @@ class TestCreateEndpointAnkiUnavailable:
 
     def test_anki_connect_runtime_error_returns_structured_error(self):
         with patch(
-            "flashgen.create_flashcard",
+            "flashgen_core.service.create_flashcard",
             side_effect=RuntimeError("Could not connect to AnkiConnect"),
         ):
             response = client.post("/create", json=VALID_PAYLOAD)
@@ -107,7 +107,7 @@ class TestCreateEndpointAnkiUnavailable:
 class TestCreateEndpointMissingTTSKey:
     def test_missing_openai_key_returns_structured_error_naming_the_key(self):
         with patch(
-            "flashgen.create_flashcard",
+            "flashgen_core.service.create_flashcard",
             side_effect=RuntimeError("OPENAI_API_KEY is not set."),
         ):
             response = client.post("/create", json=VALID_PAYLOAD)
@@ -121,7 +121,7 @@ class TestCreateEndpointMissingTTSKey:
 
     def test_missing_gemini_key_returns_structured_error_naming_the_key(self):
         with patch(
-            "flashgen.create_flashcard",
+            "flashgen_core.service.create_flashcard",
             side_effect=RuntimeError("GEMINI_API_KEY is not set."),
         ):
             response = client.post("/create", json=VALID_PAYLOAD)

@@ -156,10 +156,15 @@ No new test file. Acceptance: `docker compose up` on a clean Lightsail clone sta
 
 16. Move reusable engine code from `flashgen.py` into focused package modules.
 
-**Acceptance criteria**:
+**Acceptance criteria** (all met — flashgen-8ik):
 - All existing tests pass after extraction
 - `flashgen.py` imports from `flashgen_core`, not local functions
 - `flashgen_mcp.app` imports from `flashgen_core`, not from `flashgen.py`
+
+Extraction note: the tests patched collaborators by name on the `flashgen`
+module (`patch("flashgen.anki_invoke")`), which stops intercepting once the
+caller moves to another module. Each such target was repointed to the module
+that now DEFINES the name; no assertion or payload changed.
 
 ---
 

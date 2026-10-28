@@ -20,6 +20,7 @@ import requests
 from fastapi.testclient import TestClient
 
 import flashgen
+import flashgen_core.anki
 from flashgen_mcp.app import app
 
 _ANKI_CONNECT_URL = os.environ.get("ANKI_CONNECT_URL", "")
@@ -130,7 +131,7 @@ class TestFlashgenMcpNetworkReachability:
 
     def test_flashgen_anki_invoke_reaches_anki_connect(self) -> None:
         """flashgen.anki_invoke('version') must succeed with the configured URL."""
-        with patch.object(flashgen, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
+        with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
             result = flashgen.anki_invoke("version")
         assert isinstance(result, int), f"Expected integer version, got {result!r}"
 
@@ -148,7 +149,7 @@ class TestHealthEndpointAnkiLiveness:
         client = TestClient(app)
 
         with patch.object(
-            flashgen,
+            flashgen_core.anki,
             "anki_invoke",
             side_effect=RuntimeError("Could not connect to AnkiConnect"),
         ):

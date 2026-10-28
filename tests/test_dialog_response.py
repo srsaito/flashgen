@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import flashgen
+import flashgen_core.anki
 from flashgen_mcp.app import app
 from flashgen_mcp.schema import CardRequest
 
@@ -78,9 +79,9 @@ def _run_engine_create(calls, model_names, **overrides):
         english_prompt="Are you heading home already?",
     )
     kwargs.update(overrides)
-    with patch("flashgen.anki_invoke", side_effect=_fake_anki(calls, model_names)), \
-         patch("flashgen.generate_tts_file"), \
-         patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+    with patch("flashgen_core.anki.anki_invoke", side_effect=_fake_anki(calls, model_names)), \
+         patch("flashgen_core.audio.generate_tts_file"), \
+         patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
         return flashgen.create_flashcard(**kwargs)
 
 
@@ -267,7 +268,7 @@ class TestMcpDialogSurface:
             "japanese_prompt_tts": "今日はもう帰りますか？",
             "audio_prompt_file": "y.wav",
         }
-        with patch("flashgen.create_flashcard", return_value=fake_result) as mock_create:
+        with patch("flashgen_core.service.create_flashcard", return_value=fake_result) as mock_create:
             response = client.post("/create", json=DIALOG_PAYLOAD)
 
         assert response.status_code == 200
@@ -302,7 +303,7 @@ _needs_live_anki = pytest.mark.skipif(
 class TestDialogCardCountLive:
     @pytest.fixture()
     def test_deck(self):
-        with patch.object(flashgen, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
+        with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
             flashgen.anki_invoke("createDeck", {"deck": _TEST_DECK})
             created_notes = []
             yield created_notes
@@ -310,7 +311,7 @@ class TestDialogCardCountLive:
                 flashgen.anki_invoke("deleteNotes", {"notes": created_notes})
 
     def test_dialog_note_yields_exactly_one_card(self, test_deck):
-        with patch.object(flashgen, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
+        with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
             result = flashgen.create_flashcard(
                 card_type="dialog_response",
                 deck_name=_TEST_DECK,
@@ -335,7 +336,7 @@ class TestDialogCardCountLive:
             assert info["modelName"] == DIALOG_MODEL
 
     def test_standard_note_with_prompt_still_yields_three_cards(self, test_deck):
-        with patch.object(flashgen, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
+        with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
             result = flashgen.create_flashcard(
                 deck_name=_TEST_DECK,
                 japanese="お疲れ様でした。",

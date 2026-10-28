@@ -3,6 +3,9 @@ import unittest
 from unittest.mock import patch
 
 import flashgen
+import flashgen_core.anki
+import flashgen_core.service
+import flashgen_core.audio
 
 
 class FuriganaNormalizationTests(unittest.TestCase):
@@ -54,19 +57,19 @@ class FuriganaNormalizationTests(unittest.TestCase):
             tts_inputs.append(text)
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}), patch.object(
-            flashgen, "check_anki_ready"
-        ), patch.object(flashgen, "get_model_field_names", return_value=[]), patch.object(
-            flashgen, "OpenAI"
+            flashgen_core.anki, "check_anki_ready"
+        ), patch.object(flashgen_core.anki, "get_model_field_names", return_value=[]), patch.object(
+            flashgen_core.service, "OpenAI"
         ), patch.object(
-            flashgen,
+            flashgen_core.service,
             "fill_missing_translation",
             side_effect=lambda _client, japanese, english: (japanese, english),
         ), patch.object(
-            flashgen, "generate_tts_file", side_effect=fake_generate_tts_file
+            flashgen_core.audio, "generate_tts_file", side_effect=fake_generate_tts_file
         ), patch.object(
-            flashgen, "store_media_file", side_effect=lambda _path, filename: filename
+            flashgen_core.anki, "store_media_file", side_effect=lambda _path, filename: filename
         ), patch.object(
-            flashgen, "add_note", side_effect=fake_add_note
+            flashgen_core.anki, "add_note", side_effect=fake_add_note
         ):
             result = flashgen.create_flashcard(
                 japanese="写真[しゃしん]を撮影[さつえい]しました。",

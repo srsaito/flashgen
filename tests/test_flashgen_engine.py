@@ -186,9 +186,9 @@ class TestCreateFlashcardBreakIntake:
                 "addNote": 111,
             }[action]
 
-        with patch("flashgen.anki_invoke", side_effect=invoke), \
-             patch("flashgen.generate_tts_file") as mock_tts, \
-             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+        with patch("flashgen_core.anki.anki_invoke", side_effect=invoke), \
+             patch("flashgen_core.audio.generate_tts_file") as mock_tts, \
+             patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
             result = flashgen.create_flashcard(
                 japanese="はい。<br> 元気[げんき]です。",
                 english="Yes.\nI'm fine.",
@@ -217,9 +217,9 @@ class TestCreateFlashcardBreakIntake:
                 "addNote": 112,
             }[action]
 
-        with patch("flashgen.anki_invoke", side_effect=invoke), \
-             patch("flashgen.generate_tts_file") as mock_tts, \
-             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+        with patch("flashgen_core.anki.anki_invoke", side_effect=invoke), \
+             patch("flashgen_core.audio.generate_tts_file") as mock_tts, \
+             patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
             result = flashgen.create_flashcard(
                 japanese="えい<b> 養[よう]</b>",
                 english="<i>nutrition</i>",
@@ -233,7 +233,7 @@ class TestCreateFlashcardBreakIntake:
         assert note["fields"]["English"] == "<i>nutrition</i>"
 
     def test_unbalanced_emphasis_rejected_before_any_anki_call(self):
-        with patch("flashgen.anki_invoke") as mock_invoke:
+        with patch("flashgen_core.anki.anki_invoke") as mock_invoke:
             with pytest.raises(RuntimeError, match="Invalid markup in 'japanese'"):
                 flashgen.create_flashcard(japanese="えい<b>よう", english="x")
         mock_invoke.assert_not_called()
@@ -281,10 +281,10 @@ class TestCreateFlashcardResultEcho:
 
     def test_every_text_field_echoes_real_newlines(self):
         calls = []
-        with patch("flashgen.anki_invoke", side_effect=self._invoke(
+        with patch("flashgen_core.anki.anki_invoke", side_effect=self._invoke(
                 calls, [flashgen.MODEL_NAME, flashgen.DIALOG_MODEL_NAME])), \
-             patch("flashgen.generate_tts_file"), \
-             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+             patch("flashgen_core.audio.generate_tts_file"), \
+             patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
             result = flashgen.create_flashcard(
                 card_type="dialog_response",
                 japanese="1. はい。\\n2. いいえ。",
@@ -305,10 +305,10 @@ class TestCreateFlashcardResultEcho:
         rich_text_to_html normalizes again and normalize_line_breaks is
         idempotent, so the stored HTML is <br> either way."""
         calls = []
-        with patch("flashgen.anki_invoke", side_effect=self._invoke(
+        with patch("flashgen_core.anki.anki_invoke", side_effect=self._invoke(
                 calls, [flashgen.MODEL_NAME, flashgen.DIALOG_MODEL_NAME])), \
-             patch("flashgen.generate_tts_file"), \
-             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+             patch("flashgen_core.audio.generate_tts_file"), \
+             patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
             flashgen.create_flashcard(
                 card_type="dialog_response",
                 japanese="1. はい。\\n2. いいえ。",
@@ -357,7 +357,7 @@ class TestResolveTtsConfig:
 
 class TestAnkiInvoke:
     def test_connection_error_raises_runtime_error(self):
-        with patch("flashgen.requests.post", side_effect=Exception("refused")):
+        with patch("flashgen_core.anki.requests.post", side_effect=Exception("refused")):
             with pytest.raises(Exception):
                 flashgen.anki_invoke("version")
 
@@ -365,7 +365,7 @@ class TestAnkiInvoke:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"error": "deck not found", "result": None}
         mock_resp.raise_for_status.return_value = None
-        with patch("flashgen.requests.post", return_value=mock_resp):
+        with patch("flashgen_core.anki.requests.post", return_value=mock_resp):
             with pytest.raises(RuntimeError, match="AnkiConnect error"):
                 flashgen.anki_invoke("deckNames")
 
@@ -373,7 +373,7 @@ class TestAnkiInvoke:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"error": None, "result": 6}
         mock_resp.raise_for_status.return_value = None
-        with patch("flashgen.requests.post", return_value=mock_resp):
+        with patch("flashgen_core.anki.requests.post", return_value=mock_resp):
             assert flashgen.anki_invoke("version") == 6
 
 
@@ -392,31 +392,31 @@ def _make_anki_mock(version=6, deck_names=None, model_names=None):
 
 class TestCheckAnkiReady:
     def test_passes_when_deck_and_model_exist(self):
-        with patch("flashgen.anki_invoke", side_effect=_make_anki_mock()):
+        with patch("flashgen_core.anki.anki_invoke", side_effect=_make_anki_mock()):
             flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_when_deck_missing(self):
-        with patch("flashgen.anki_invoke", side_effect=_make_anki_mock(deck_names=["Other"])):
+        with patch("flashgen_core.anki.anki_invoke", side_effect=_make_anki_mock(deck_names=["Other"])):
             with pytest.raises(RuntimeError, match="Deck '.*' not found"):
                 flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_when_model_missing(self):
-        with patch("flashgen.anki_invoke", side_effect=_make_anki_mock(model_names=["Other"])):
+        with patch("flashgen_core.anki.anki_invoke", side_effect=_make_anki_mock(model_names=["Other"])):
             with pytest.raises(RuntimeError, match="Note type '.*' not found"):
                 flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_on_bad_version_response(self):
-        with patch("flashgen.anki_invoke", side_effect=["not-an-int"]):
+        with patch("flashgen_core.anki.anki_invoke", side_effect=["not-an-int"]):
             with pytest.raises(RuntimeError, match="Unexpected AnkiConnect version"):
                 flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_on_bad_deck_names_response(self):
-        with patch("flashgen.anki_invoke", side_effect=[6, "not-a-list"]):
+        with patch("flashgen_core.anki.anki_invoke", side_effect=[6, "not-a-list"]):
             with pytest.raises(RuntimeError, match="Unexpected deckNames"):
                 flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_on_bad_model_names_response(self):
-        with patch("flashgen.anki_invoke", side_effect=[6, ["日本語-Soso"], "not-a-list"]):
+        with patch("flashgen_core.anki.anki_invoke", side_effect=[6, ["日本語-Soso"], "not-a-list"]):
             with pytest.raises(RuntimeError, match="Unexpected modelNames"):
                 flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
@@ -427,17 +427,17 @@ class TestCheckAnkiReady:
 
 class TestAnkiHelperGuards:
     def test_get_model_field_names_bad_response_raises(self):
-        with patch("flashgen.anki_invoke", return_value="not-a-list"):
+        with patch("flashgen_core.anki.anki_invoke", return_value="not-a-list"):
             with pytest.raises(RuntimeError, match="Unexpected response from modelFieldNames"):
                 flashgen.get_model_field_names("MyModel")
 
     def test_can_add_note_bad_response_raises(self):
-        with patch("flashgen.anki_invoke", return_value=["not-a-bool"]):
+        with patch("flashgen_core.anki.anki_invoke", return_value=["not-a-bool"]):
             with pytest.raises(RuntimeError, match="Unexpected response from canAddNotes"):
                 flashgen.can_add_note({"deckName": "x", "modelName": "y", "fields": {}})
 
     def test_find_existing_notes_bad_response_raises(self):
-        with patch("flashgen.anki_invoke", return_value=["not-an-int", 2]):
+        with patch("flashgen_core.anki.anki_invoke", return_value=["not-an-int", 2]):
             with pytest.raises(RuntimeError, match="non-int note ids"):
                 flashgen.find_existing_notes("MyModel", "日本語テキスト")
 
@@ -504,9 +504,9 @@ class TestFillMissingTranslation:
 
 class TestAddNoteDuplicate:
     def test_duplicate_note_raises(self):
-        with patch("flashgen.can_add_note", return_value=False), \
-             patch("flashgen.find_existing_notes", return_value=[12345]), \
-             patch("flashgen.get_notes_info", return_value=[{"noteId": 12345}]):
+        with patch("flashgen_core.anki.can_add_note", return_value=False), \
+             patch("flashgen_core.anki.find_existing_notes", return_value=[12345]), \
+             patch("flashgen_core.anki.get_notes_info", return_value=[{"noteId": 12345}]):
             with pytest.raises(RuntimeError, match="cannot be added"):
                 flashgen.add_note(
                     deck_name="日本語-Soso",

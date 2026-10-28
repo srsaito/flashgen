@@ -9,7 +9,7 @@ import requests as _requests
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-import flashgen
+from flashgen_core import anki, config, furigana, service
 from flashgen_mcp.schema import (
     CardRequest,
     DeleteNotesRequest,
@@ -20,7 +20,7 @@ from flashgen_mcp.schema import (
 
 # Prefer a Docker/Compose secret file (FLASHGEN_MCP_TOKEN_FILE -> /run/secrets/...)
 # over a plaintext env var, so the bearer token stays out of `docker inspect`.
-_MCP_TOKEN = flashgen.read_secret("FLASHGEN_MCP_TOKEN")
+_MCP_TOKEN = config.read_secret("FLASHGEN_MCP_TOKEN")
 
 _ISSUER = "https://mcp.ssaito.net"
 _oauth_codes: dict[str, dict] = {}  # auth_code → {code_challenge, redirect_uri, expires}
@@ -330,9 +330,9 @@ def _validate_card(req: CardRequest) -> dict:
     # Japanese Prompt and Notes. Notes was omitted until 2026-09-11, so a unit
     # written without its leading space (after "（", "<b>", a digit, a Latin
     # letter) kept that character inside the ruby base.
-    japanese = flashgen.normalize_furigana_text(req.japanese)
-    japanese_prompt = flashgen.normalize_furigana_text(req.japanese_prompt)
-    notes = flashgen.normalize_furigana_text(req.notes)
+    japanese = furigana.normalize_furigana_text(req.japanese)
+    japanese_prompt = furigana.normalize_furigana_text(req.japanese_prompt)
+    notes = furigana.normalize_furigana_text(req.notes)
 
     normalized = {
         "japanese": japanese,
@@ -349,10 +349,10 @@ def _validate_card(req: CardRequest) -> dict:
         ("japanese_prompt", req.japanese_prompt),
         ("english_prompt", req.english_prompt),
     ):
-        errors = flashgen.markup_errors(value)
+        errors = furigana.markup_errors(value)
         if label in _FURIGANA_FIELDS:
-            errors = errors + flashgen.furigana_errors(normalized[label])
-        warnings = flashgen.markup_warnings(value)
+            errors = errors + furigana.furigana_errors(normalized[label])
+        warnings = furigana.markup_warnings(value)
         if errors:
             markup_errors[label] = errors
         if warnings:
@@ -388,12 +388,12 @@ def _validate_args(args: dict) -> dict:
 def _create_args(args: dict) -> dict:
     """Run create_flashcard and return a result dict, raising on error."""
     req = CardRequest(**args)
-    return flashgen.create_flashcard(
+    return service.create_flashcard(
         japanese=req.japanese,
         english=req.english,
         notes=req.notes,
         tags=req.tags,
-        deck_name=req.deck if req.deck else flashgen.DECK_NAME,
+        deck_name=req.deck if req.deck else config.DECK_NAME,
         japanese_tts=req.japanese_tts,
         japanese_prompt=req.japanese_prompt,
         english_prompt=req.english_prompt,
@@ -538,7 +538,7 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
     @app.get("/health")
     async def health() -> JSONResponse:
         try:
-            flashgen.anki_invoke("version")
+            anki.anki_invoke("version")
             return JSONResponse(status_code=200, content={"ok": True})
         except Exception:
             return JSONResponse(status_code=503, content={"ok": False, "anki": False})
@@ -585,7 +585,7 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
                     req = SearchNotesRequest(**args)
                     return _engine_result(
                         rpc_id,
-                        lambda: flashgen.search_notes(
+                        lambda: anki.search_notes(
                             query=req.query,
                             deck=req.deck,
                             limit=req.limit,
@@ -595,23 +595,23 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
 
                 if name == "get_note":
                     req = GetNoteRequest(**args)
-                    return _engine_result(rpc_id, lambda: flashgen.get_note(req.note_id))
+                    return _engine_result(rpc_id, lambda: anki.get_note(req.note_id))
 
                 if name == "list_decks":
-                    return _engine_result(rpc_id, flashgen.list_decks)
+                    return _engine_result(rpc_id, anki.list_decks)
 
                 if name == "list_tags":
-                    return _engine_result(rpc_id, flashgen.list_tags)
+                    return _engine_result(rpc_id, anki.list_tags)
 
                 if name == "delete_notes":
                     req = DeleteNotesRequest(**args)
-                    return _engine_result(rpc_id, lambda: flashgen.delete_notes(req.note_ids))
+                    return _engine_result(rpc_id, lambda: anki.delete_notes(req.note_ids))
 
                 if name == "update_note":
                     req = UpdateNoteRequest(**args)
                     return _engine_result(
                         rpc_id,
-                        lambda: flashgen.update_note(
+                        lambda: service.update_note(
                             req.note_id,
                             fields=req.fields,
                             tags=req.tags,
@@ -634,12 +634,12 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
     @app.post("/create")
     async def create(req: CardRequest) -> JSONResponse:
         try:
-            result = flashgen.create_flashcard(
+            result = service.create_flashcard(
                 japanese=req.japanese,
                 english=req.english,
                 notes=req.notes,
                 tags=req.tags,
-                deck_name=req.deck if req.deck else flashgen.DECK_NAME,
+                deck_name=req.deck if req.deck else config.DECK_NAME,
                 japanese_tts=req.japanese_tts,
                 japanese_prompt=req.japanese_prompt,
                 english_prompt=req.english_prompt,

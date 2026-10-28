@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import flashgen
+import flashgen_core.anki
 from flashgen_mcp.app import app
 from flashgen_mcp.schema import CardRequest
 
@@ -110,9 +111,9 @@ def _run_engine_create(calls, model_names, tts_texts=None, **overrides):
         if tts_texts is not None:
             tts_texts.append(text)
 
-    with patch("flashgen.anki_invoke", side_effect=_fake_anki(calls, model_names)), \
-         patch("flashgen.generate_tts_file", side_effect=fake_tts), \
-         patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+    with patch("flashgen_core.anki.anki_invoke", side_effect=_fake_anki(calls, model_names)), \
+         patch("flashgen_core.audio.generate_tts_file", side_effect=fake_tts), \
+         patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
         return flashgen.create_flashcard(**_engine_kwargs(**overrides))
 
 
@@ -342,12 +343,12 @@ class TestEngineCuedCreate:
         """A TTS 429 must not produce a note with a missing audio field."""
         calls = []
         with patch(
-            "flashgen.anki_invoke",
+            "flashgen_core.anki.anki_invoke",
             side_effect=_fake_anki(calls, [flashgen.MODEL_NAME, CUED_MODEL]),
         ), patch(
-            "flashgen.generate_tts_file",
+            "flashgen_core.audio.generate_tts_file",
             side_effect=RuntimeError("429 rate limit exceeded"),
-        ), patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+        ), patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
             with pytest.raises(RuntimeError, match="429"):
                 flashgen.create_flashcard(**_engine_kwargs())
 
@@ -566,7 +567,7 @@ class TestMcpCuedSurface:
             "japanese_prompt_tts": "台風すごかったね。大丈夫？",
             "audio_prompt_file": "y.wav",
         }
-        with patch("flashgen.create_flashcard", return_value=fake_result) as mock_create:
+        with patch("flashgen_core.service.create_flashcard", return_value=fake_result) as mock_create:
             response = client.post("/create", json=CUED_PAYLOAD)
 
         assert response.status_code == 200
@@ -644,7 +645,7 @@ class TestCuedCollectionPaths:
                 "cardsInfo": [{"cardId": 101, "note": 100, "deckName": flashgen.DECK_NAME}],
             }
         )
-        with patch("flashgen.anki_invoke", fake):
+        with patch("flashgen_core.anki.anki_invoke", fake):
             result = flashgen.search_notes(query="大丈夫")
 
         assert result["count"] == 1
@@ -662,7 +663,7 @@ class TestCuedCollectionPaths:
                 "cardsInfo": [{"cardId": 101, "note": 100, "deckName": flashgen.DECK_NAME}],
             }
         )
-        with patch("flashgen.anki_invoke", fake):
+        with patch("flashgen_core.anki.anki_invoke", fake):
             result = flashgen.get_note(100)
 
         assert set(result["fields"]) == set(EXPECTED_FIELDS)
@@ -682,9 +683,9 @@ class TestCuedCollectionPaths:
                 "updateNoteFields": None,
             }
         )
-        with patch("flashgen.anki_invoke", fake), \
-             patch("flashgen.generate_tts_file"), \
-             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+        with patch("flashgen_core.anki.anki_invoke", fake), \
+             patch("flashgen_core.audio.generate_tts_file"), \
+             patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
             flashgen.update_note(
                 100,
                 fields={
@@ -709,9 +710,9 @@ class TestCuedCollectionPaths:
                 "updateNoteFields": None,
             }
         )
-        with patch("flashgen.anki_invoke", fake), \
-             patch("flashgen.generate_tts_file"), \
-             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+        with patch("flashgen_core.anki.anki_invoke", fake), \
+             patch("flashgen_core.audio.generate_tts_file"), \
+             patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
             flashgen.update_note(100, fields={"notes": "1.写真[しゃしん]: photo"})
 
         updated = fake.params_of("updateNoteFields")[0]["note"]["fields"]
@@ -745,7 +746,7 @@ _needs_live_anki = pytest.mark.skipif(
 class TestCuedCardCountLive:
     @pytest.fixture()
     def test_deck(self):
-        with patch.object(flashgen, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
+        with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
             flashgen.anki_invoke("createDeck", {"deck": _TEST_DECK})
             created_notes = []
             yield created_notes
@@ -753,7 +754,7 @@ class TestCuedCardCountLive:
                 flashgen.anki_invoke("deleteNotes", {"notes": created_notes})
 
     def test_cued_note_yields_exactly_one_card(self, test_deck):
-        with patch.object(flashgen, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
+        with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
             result = flashgen.create_flashcard(
                 card_type="cued_response",
                 deck_name=_TEST_DECK,
@@ -777,7 +778,7 @@ class TestCuedCardCountLive:
             assert info["modelName"] == CUED_MODEL
 
     def test_standard_note_with_prompt_still_yields_three_cards(self, test_deck):
-        with patch.object(flashgen, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
+        with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
             result = flashgen.create_flashcard(
                 deck_name=_TEST_DECK,
                 japanese="お疲れ様でした。",
