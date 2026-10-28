@@ -28,6 +28,17 @@ _ISSUER = config.MCP_ISSUER
 # from the container log without the card text being in it (flashgen-yya).
 logger = logging.getLogger("flashgen.mcp")
 logger.setLevel(config.LOG_LEVEL)
+
+# ⭐ WITHOUT THIS THE LOGGING IS SILENTLY DEAD IN PRODUCTION: uvicorn's log
+# config gives handlers to the "uvicorn*" loggers only and never touches the
+# root logger, and nothing in the container calls basicConfig. An INFO record
+# on a handler-less logger falls through to logging.lastResort, which drops
+# anything below WARNING — so every mcp_tool_call line vanished while the
+# tests (which configure logging themselves) still passed.
+if not logging.getLogger().handlers and not logger.handlers:
+    _handler = logging.StreamHandler()  # stderr, where docker logs reads it
+    _handler.setFormatter(logging.Formatter("%(message)s"))  # the line is already JSON
+    logger.addHandler(_handler)
 _oauth_codes: dict[str, dict] = {}  # auth_code → {code_challenge, redirect_uri, expires}
 
 

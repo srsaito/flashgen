@@ -4,7 +4,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+import os
+import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -139,6 +142,52 @@ class TestToolCallLogging:
             "ok": False,
             "reason": "anki_unavailable",
         }
+
+
+class TestTheLogReachesStderr:
+    """The regression test for a feature that was silently dead in production.
+
+    Nothing in the container calls logging.basicConfig, and uvicorn configures
+    only its own "uvicorn*" loggers — never the root. A handler-less logger
+    sends INFO records to logging.lastResort, which drops everything below
+    WARNING, so every tool-call line disappeared in the deployed server while
+    these tests (pytest configures logging itself) kept passing. It has to be
+    checked in a FRESH interpreter with no logging setup of its own.
+    """
+
+    def run_probe(self, code: str) -> subprocess.CompletedProcess:
+        root = Path(__file__).resolve().parent.parent
+        env = {**os.environ, "PYTHONPATH": str(root / "src")}
+        return subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=root,
+            env=env,
+        )
+
+    def test_an_info_line_is_emitted_without_any_logging_setup(self) -> None:
+        done = self.run_probe(
+            "import flashgen_mcp.app as a; a.logger.info('PROBE-INFO-LINE')"
+        )
+        assert done.returncode == 0, done.stderr
+        assert "PROBE-INFO-LINE" in done.stderr + done.stdout
+
+    def test_importing_the_app_logs_the_startup_line(self) -> None:
+        done = self.run_probe("import flashgen_mcp.app  # noqa: F401")
+        assert done.returncode == 0, done.stderr
+        assert '"event": "mcp_startup"' in done.stderr + done.stdout
+
+    def test_it_does_not_double_log_when_the_root_is_configured(self) -> None:
+        # basicConfig first: the app must then propagate to that handler
+        # instead of adding a second one and printing everything twice.
+        done = self.run_probe(
+            "import logging; logging.basicConfig(level=logging.INFO);"
+            "import flashgen_mcp.app as a; a.logger.info('PROBE-ONCE')"
+        )
+        assert done.returncode == 0, done.stderr
+        assert (done.stderr + done.stdout).count("PROBE-ONCE") == 1
 
 
 class TestEnvHelpers:
