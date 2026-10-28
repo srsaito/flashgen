@@ -3,6 +3,9 @@ import pytest
 from unittest.mock import patch
 
 import flashgen
+import flashgen_core.service
+import flashgen_core.audio
+import flashgen_core.anki
 
 
 def note_info(note_id, japanese="", english="", notes="", model="Japanese Listening+Production", tags=None):
@@ -52,7 +55,7 @@ class TestSearchNotesQueryBuilding:
     def test_raw_anki_query_passed_through(self):
         fake = FakeAnki({"findNotes": [], "notesInfo": []})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query='tag:jp "Japanese:*語*"')
+            result = flashgen_core.anki.search_notes(query='tag:jp "Japanese:*語*"')
         assert fake.params_of("findNotes")[0]["query"] == 'tag:jp "Japanese:*語*"'
         assert result["count"] == 0
         assert result["truncated"] is False
@@ -60,28 +63,28 @@ class TestSearchNotesQueryBuilding:
     def test_deck_is_anded_into_query(self):
         fake = FakeAnki({"findNotes": [], "notesInfo": []})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            flashgen.search_notes(query="tag:jp", deck="日本語-Soso")
+            flashgen_core.anki.search_notes(query="tag:jp", deck="日本語-Soso")
         assert fake.params_of("findNotes")[0]["query"] == 'tag:jp deck:"日本語-Soso"'
 
     def test_bare_word_builds_wildcard_interleaved_japanese_query(self):
         fake = FakeAnki({"findNotes": [], "notesInfo": []})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            flashgen.search_notes(query="掃除機")
+            flashgen_core.anki.search_notes(query="掃除機")
         assert fake.params_of("findNotes")[0]["query"] == '"Japanese:*掃*除*機*"'
 
     def test_empty_query_with_deck_lists_deck(self):
         fake = FakeAnki({"findNotes": [], "notesInfo": []})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            flashgen.search_notes(query="", deck="日本語-Soso")
+            flashgen_core.anki.search_notes(query="", deck="日本語-Soso")
         assert fake.params_of("findNotes")[0]["query"] == 'deck:"日本語-Soso"'
 
     def test_empty_query_without_deck_rejected(self):
         with pytest.raises(RuntimeError, match="query"):
-            flashgen.search_notes(query="")
+            flashgen_core.anki.search_notes(query="")
 
     def test_bad_match_field_rejected(self):
         with pytest.raises(RuntimeError, match="match_field"):
-            flashgen.search_notes(query="x", match_field="bogus")
+            flashgen_core.anki.search_notes(query="x", match_field="bogus")
 
 
 class TestSpacedFieldMatching:
@@ -96,7 +99,7 @@ class TestSpacedFieldMatching:
         infos = [note_info(1, japanese=self.SPACED)]
         fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="その報告はある程度本当だ")
+            result = flashgen_core.anki.search_notes(query="その報告はある程度本当だ")
         assert result["count"] == 1
 
     def test_fragment_spanning_space_boundary_matches(self):
@@ -104,14 +107,14 @@ class TestSpacedFieldMatching:
         infos = [note_info(1, japanese=self.SPACED)]
         fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="その報告はあ")
+            result = flashgen_core.anki.search_notes(query="その報告はあ")
         assert result["count"] == 1
 
     def test_match_field_any_ignores_japanese_spacing(self):
         infos = [note_info(1, japanese=self.SPACED)]
         fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="報告はある", match_field="any")
+            result = flashgen_core.anki.search_notes(query="報告はある", match_field="any")
         assert result["count"] == 1
 
     def test_full_sentence_builds_single_interleaved_term(self):
@@ -119,7 +122,7 @@ class TestSpacedFieldMatching:
         # so long words stay one term, preserving full ordering in the narrowing.
         fake = FakeAnki({"findNotes": [], "notesInfo": []})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            flashgen.search_notes(query="その報告はある程度本当だ")
+            flashgen_core.anki.search_notes(query="その報告はある程度本当だ")
         q = fake.params_of("findNotes")[0]["query"]
         assert q == '"Japanese:*そ*の*報*告*は*あ*る*程*度*本*当*だ*"'
 
@@ -128,7 +131,7 @@ class TestSpacedFieldMatching:
         infos = [note_info(1, japanese="当だ、ある程度本。その報告は別だ")]
         fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="その報告はある程度本当だ")
+            result = flashgen_core.anki.search_notes(query="その報告はある程度本当だ")
         assert result["count"] == 0
 
 
@@ -140,7 +143,7 @@ class TestSearchNotesFuriganaMatching:
         infos = [note_info(1, japanese=annotated)]
         fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="掃除機")
+            result = flashgen_core.anki.search_notes(query="掃除機")
         assert result["count"] == 1
         assert result["notes"][0]["note_id"] == 1
 
@@ -152,7 +155,7 @@ class TestSearchNotesFuriganaMatching:
         ]
         fake = FakeAnki({"findNotes": [1, 2], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="掃除機")
+            result = flashgen_core.anki.search_notes(query="掃除機")
         assert [n["note_id"] for n in result["notes"]] == [1]
 
     def test_match_field_english_is_case_insensitive(self):
@@ -162,7 +165,7 @@ class TestSearchNotesFuriganaMatching:
         ]
         fake = FakeAnki({"findNotes": [1, 2], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="vacuum", match_field="english")
+            result = flashgen_core.anki.search_notes(query="vacuum", match_field="english")
         assert [n["note_id"] for n in result["notes"]] == [1]
         assert fake.params_of("findNotes")[0]["query"] == '"English:*vacuum*"'
 
@@ -171,7 +174,7 @@ class TestSearchNotesFuriganaMatching:
         fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
             # Raw field contains the annotation, not the contiguous word.
-            result = flashgen.search_notes(query="掃除機", match_field="japanese")
+            result = flashgen_core.anki.search_notes(query="掃除機", match_field="japanese")
         assert result["count"] == 0
 
 
@@ -180,24 +183,24 @@ class TestFieldTextBreaks:
         # A stored <br> reads as spacing, which Japanese despaced matching
         # ignores — so a query word can still match across a line break.
         info = note_info(1, japanese="はい<br>そうです")
-        assert flashgen._matches_word(info, "はいそうです", "japanese_tts") is True
+        assert flashgen_core.anki._matches_word(info, "はいそうです", "japanese_tts") is True
 
     def test_escaped_br_text_is_not_treated_as_markup(self):
         # User-visible "&lt;br&gt;" text must survive as literal "<br>".
         info = note_info(1, english="type &lt;br&gt; here")
-        assert flashgen._field_text(info, "English") == "type <br> here"
+        assert flashgen_core.anki._field_text(info, "English") == "type <br> here"
 
     def test_emphasis_tags_dropped_in_matching(self):
         # A query word can match across an emphasis tag boundary.
         info = note_info(1, japanese="えい<b>よう</b>")
-        assert flashgen._matches_word(info, "えいよう", "japanese_tts") is True
+        assert flashgen_core.anki._matches_word(info, "えいよう", "japanese_tts") is True
 
 
 class TestFindExistingNotesQuery:
     def test_newline_and_br_sanitized_in_dup_query(self):
         fake = FakeAnki({"findNotes": []})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            flashgen.find_existing_notes("M", "a\nb<br>c")
+            flashgen_core.anki.find_existing_notes("M", "a\nb<br>c")
         query = fake.params_of("findNotes")[0]["query"]
         assert "\n" not in query
         assert "<br>" not in query
@@ -208,7 +211,7 @@ class TestSearchNotesResults:
         infos = [note_info(i, japanese=f"猫{i}") for i in range(1, 4)]
         fake = FakeAnki({"findNotes": [1, 2, 3], "notesInfo": infos, **default_cards([1, 2])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="猫", limit=2)
+            result = flashgen_core.anki.search_notes(query="猫", limit=2)
         assert result["count"] == 2
         assert result["truncated"] is True
 
@@ -216,7 +219,7 @@ class TestSearchNotesResults:
         infos = [note_info(1, japanese="猫", model="Japanese Dialog Response")]
         fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="猫")
+            result = flashgen_core.anki.search_notes(query="猫")
         entry = result["notes"][0]
         assert entry["model"] == "Japanese Dialog Response"
         assert entry["deck"] == "日本語-Soso"
@@ -228,7 +231,7 @@ class TestSearchNotesResults:
         infos = [note_info(1, japanese="猫", notes="x" * 1000)]
         fake = FakeAnki({"findNotes": [1], "notesInfo": infos, **default_cards([1])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="猫")
+            result = flashgen_core.anki.search_notes(query="猫")
         notes_value = result["notes"][0]["fields"]["Notes"]
         assert len(notes_value) == 401 and notes_value.endswith("…")
 
@@ -238,7 +241,7 @@ class TestGetNote:
         infos = [note_info(7, japanese="猫", notes="y" * 1000)]
         fake = FakeAnki({"notesInfo": infos, **default_cards([7])})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.get_note(7)
+            result = flashgen_core.anki.get_note(7)
         assert result["note_id"] == 7
         assert result["fields"]["Notes"] == "y" * 1000  # not truncated
         assert result["card_ids"] == [8]
@@ -247,30 +250,30 @@ class TestGetNote:
         fake = FakeAnki({"notesInfo": [{}]})
         with patch("flashgen_core.anki.anki_invoke", fake):
             with pytest.raises(RuntimeError, match="Note 999 not found"):
-                flashgen.get_note(999)
+                flashgen_core.anki.get_note(999)
 
 
 class TestDeleteNotes:
     def test_deletes_found_and_reports_missing(self):
         fake = FakeAnki({"notesInfo": [note_info(1), {}], "deleteNotes": None})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.delete_notes([1, 999])
+            result = flashgen_core.anki.delete_notes([1, 999])
         assert result == {"status": "ok", "deleted": [1], "missing": [999]}
         assert fake.params_of("deleteNotes")[0] == {"notes": [1]}
 
     def test_all_missing_skips_delete_call(self):
         fake = FakeAnki({"notesInfo": [{}]})
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.delete_notes([999])
+            result = flashgen_core.anki.delete_notes([999])
         assert result["deleted"] == []
         assert result["missing"] == [999]
         assert fake.params_of("deleteNotes") == []
 
     def test_empty_or_non_int_rejected(self):
         with pytest.raises(RuntimeError):
-            flashgen.delete_notes([])
+            flashgen_core.anki.delete_notes([])
         with pytest.raises(RuntimeError):
-            flashgen.delete_notes(["abc"])
+            flashgen_core.anki.delete_notes(["abc"])
 
 
 def update_fake(note_id=5, **info_kwargs):
@@ -287,17 +290,17 @@ def update_fake(note_id=5, **info_kwargs):
 class TestUpdateNote:
     def test_unknown_field_rejected(self):
         with pytest.raises(RuntimeError, match="Unknown field"):
-            flashgen.update_note(5, fields={"bogus": "x"})
+            flashgen_core.service.update_note(5, fields={"bogus": "x"})
 
     def test_nothing_to_update_rejected(self):
         with pytest.raises(RuntimeError, match="update"):
-            flashgen.update_note(5)
+            flashgen_core.service.update_note(5)
 
     def test_text_only_update_does_not_touch_tts(self):
         fake = update_fake(japanese="猫")
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file") as mock_tts:
-            result = flashgen.update_note(5, fields={"english": "A cat & a dog", "notes": "line1\nline2"})
+            result = flashgen_core.service.update_note(5, fields={"english": "A cat & a dog", "notes": "line1\nline2"})
         mock_tts.assert_not_called()
         sent = fake.params_of("updateNoteFields")[0]["note"]
         assert sent["id"] == 5
@@ -311,7 +314,7 @@ class TestUpdateNote:
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file") as mock_tts, \
              patch("flashgen_core.anki.store_media_file", return_value="neko.wav") as mock_store:
-            flashgen.update_note(5, fields={"japanese": "猫[ねこ]がいる"})
+            flashgen_core.service.update_note(5, fields={"japanese": "猫[ねこ]がいる"})
         mock_tts.assert_called_once()
         assert mock_tts.call_args.args[1] == "猫がいる"  # furigana stripped for TTS
         mock_store.assert_called_once()
@@ -324,7 +327,7 @@ class TestUpdateNote:
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file") as mock_tts, \
              patch("flashgen_core.anki.store_media_file", return_value="v.wav"):
-            flashgen.update_note(5, fields={"japanese_tts": "ネコがいる"})
+            flashgen_core.service.update_note(5, fields={"japanese_tts": "ネコがいる"})
         assert mock_tts.call_args.args[1] == "ネコがいる"
         sent = fake.params_of("updateNoteFields")[0]["note"]["fields"]
         assert sent["Audio"] == "[sound:v.wav]"
@@ -335,7 +338,7 @@ class TestUpdateNote:
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file") as mock_tts, \
              patch("flashgen_core.anki.store_media_file", return_value="p.wav"):
-            flashgen.update_note(5, fields={"japanese_prompt": "何[なに]をしますか"})
+            flashgen_core.service.update_note(5, fields={"japanese_prompt": "何[なに]をしますか"})
         mock_tts.assert_called_once()
         sent = fake.params_of("updateNoteFields")[0]["note"]["fields"]
         assert sent["Japanese Prompt"] == " 何[なに]をしますか"
@@ -348,7 +351,7 @@ class TestUpdateNote:
         fake = update_fake(japanese="猫")
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file") as mock_tts:
-            flashgen.update_note(5, fields={"english": "a\nb", "english_prompt": "c<br>d"})
+            flashgen_core.service.update_note(5, fields={"english": "a\nb", "english_prompt": "c<br>d"})
         mock_tts.assert_not_called()
         sent = fake.params_of("updateNoteFields")[0]["note"]["fields"]
         assert sent["English"] == "a<br>b"
@@ -359,7 +362,7 @@ class TestUpdateNote:
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file") as mock_tts, \
              patch("flashgen_core.anki.store_media_file", return_value="x.wav"):
-            flashgen.update_note(5, fields={"japanese": "はい。<br> 元気[げんき]です。"})
+            flashgen_core.service.update_note(5, fields={"japanese": "はい。<br> 元気[げんき]です。"})
         assert mock_tts.call_args.args[1] == "はい。 元気です。"
         sent = fake.params_of("updateNoteFields")[0]["note"]["fields"]
         assert sent["Japanese"] == "はい。<br> 元気[げんき]です。"
@@ -369,7 +372,7 @@ class TestUpdateNote:
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file") as mock_tts, \
              patch("flashgen_core.anki.store_media_file", return_value="e.wav"):
-            flashgen.update_note(5, fields={"japanese": "えい<b> 養[よう]</b>"})
+            flashgen_core.service.update_note(5, fields={"japanese": "えい<b> 養[よう]</b>"})
         assert mock_tts.call_args.args[1] == "えい養"
         sent = fake.params_of("updateNoteFields")[0]["note"]["fields"]
         assert sent["Japanese"] == "えい<b> 養[よう]</b>"
@@ -378,7 +381,7 @@ class TestUpdateNote:
         fake = update_fake()
         with patch("flashgen_core.anki.anki_invoke", fake):
             with pytest.raises(RuntimeError, match="Invalid markup in 'english'"):
-                flashgen.update_note(5, fields={"english": "<i>oops"})
+                flashgen_core.service.update_note(5, fields={"english": "<i>oops"})
         assert fake.calls == []
 
     def test_tts_regen_from_stored_field_containing_emphasis(self):
@@ -386,7 +389,7 @@ class TestUpdateNote:
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file") as mock_tts, \
              patch("flashgen_core.anki.store_media_file", return_value="f.wav"):
-            flashgen.update_note(5, fields={"japanese_tts": ""})
+            flashgen_core.service.update_note(5, fields={"japanese_tts": ""})
         assert mock_tts.call_args.args[1] == "えい養"
 
     def test_tts_regen_from_stored_field_containing_br(self):
@@ -396,13 +399,13 @@ class TestUpdateNote:
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file") as mock_tts, \
              patch("flashgen_core.anki.store_media_file", return_value="y.wav"):
-            flashgen.update_note(5, fields={"japanese_tts": ""})
+            flashgen_core.service.update_note(5, fields={"japanese_tts": ""})
         assert mock_tts.call_args.args[1] == "はい。 元気です。"
 
     def test_tags_replaced_with_diff(self):
         fake = update_fake(tags=["jp", "old"])
         with patch("flashgen_core.anki.anki_invoke", fake):
-            flashgen.update_note(5, tags=["jp", "new"])
+            flashgen_core.service.update_note(5, tags=["jp", "new"])
         assert fake.params_of("removeTags")[0] == {"notes": [5], "tags": "old"}
         assert fake.params_of("addTags")[0] == {"notes": [5], "tags": "new"}
         assert fake.params_of("updateNoteFields") == []
@@ -411,4 +414,4 @@ class TestUpdateNote:
         fake = FakeAnki({"notesInfo": [{}]})
         with patch("flashgen_core.anki.anki_invoke", fake):
             with pytest.raises(RuntimeError, match="not found"):
-                flashgen.update_note(999, fields={"english": "x"})
+                flashgen_core.service.update_note(999, fields={"english": "x"})

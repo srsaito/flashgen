@@ -19,51 +19,31 @@ from flashgen_core.service import create_flashcard
 # ---------------------------------------------------------------------------
 # Public API surface
 # ---------------------------------------------------------------------------
-# `import flashgen` remains the one-line way in for callers that want the whole
-# engine. These names are re-exported from flashgen_core so imports written
-# against the pre-split module keep working.
+# Constants, pure functions and the one entry point the CLI calls. These are
+# re-exported from flashgen_core, so each name here IS the same object the
+# engine uses — reading or calling it through this module is exact.
 #
-# New code should import the module it needs from flashgen_core directly, as
-# flashgen_mcp.app does. Note for test authors: patching a name HERE only
-# affects lookups that go through this module (i.e. main's create_flashcard).
-# To intercept a collaborator inside the engine, patch it in its defining
-# module — flashgen_core.anki.anki_invoke, flashgen_core.audio.generate_tts_file.
-from flashgen_core.anki import (  # noqa: F401
-    SEARCH_MATCH_FIELDS,
-    _cards_by_note,
-    _field_text,
-    _find_note_ids,
-    _matches_word,
-    _note_entry,
-    _wildcard_interleave,
-    add_note,
-    anki_invoke,
-    can_add_note,
-    check_anki_ready,
-    delete_notes,
-    ensure_cued_model,
-    ensure_dialog_model,
-    ensure_generated_model,
-    find_existing_notes,
-    get_model_field_names,
-    get_note,
-    get_notes_info,
-    list_decks,
-    list_tags,
-    search_notes,
-    store_media_file,
-)
+# ⭐ WHAT IS DELIBERATELY NOT HERE: the engine's side-effecting collaborators
+# (anki_invoke, store_media_file, generate_tts_file, check_anki_ready, add_note,
+# fill_missing_translation, ANKI_CONNECT_URL, the collection functions, ...).
+# Re-exporting a name is exact for reading but NOT for REBINDING: patching it
+# here rebinds it in this namespace only, while the engine resolves it in the
+# module that defines it — so the mock is silently ignored and the test makes
+# real network calls instead of failing. Those names were removed so that
+# `patch("flashgen.anki_invoke")` raises AttributeError at once (flashgen-76w).
+# Patch a collaborator where its CALLER looks it up: flashgen_core.anki.*,
+# flashgen_core.audio.*, flashgen_core.service.*. tests/test_facade.py enforces
+# this; memory flashgen-test-mock-targets-after-engine-split has the mapping.
+#
+# create_flashcard stays because main() calls it, which also makes
+# patch.object(flashgen, "create_flashcard") the CORRECT target for CLI tests.
+# New code should import the flashgen_core module it needs, as flashgen_mcp does.
 from flashgen_core.audio import (  # noqa: F401
-    generate_gemini_tts_file,
-    generate_openai_tts_file,
-    generate_tts_file,
     resolve_tts_config,
     safe_filename_stem,
     stable_audio_filename,
-    write_wave_file,
 )
 from flashgen_core.config import (  # noqa: F401
-    ANKI_CONNECT_URL,
     CARD_TYPES,
     CUED_CARD_BACK,
     CUED_CARD_FRONT,
@@ -100,11 +80,7 @@ from flashgen_core.furigana import (  # noqa: F401
     strip_emphasis_markup,
     strip_furigana_markup,
 )
-from flashgen_core.service import (  # noqa: F401
-    UPDATABLE_FIELDS,
-    fill_missing_translation,
-    update_note,
-)
+from flashgen_core.service import UPDATABLE_FIELDS  # noqa: F401
 
 
 def read_json_input() -> dict[str, Any]:

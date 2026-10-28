@@ -22,6 +22,8 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import flashgen
+import flashgen_core.service
+import flashgen_core.audio
 import flashgen_core.anki
 from flashgen_mcp.app import app
 from flashgen_mcp.schema import CardRequest
@@ -68,7 +70,7 @@ CUED_PAYLOAD = {
 # ---------------------------------------------------------------------------
 
 def _fake_anki(calls, model_names):
-    """Dispatcher standing in for flashgen.anki_invoke; records every call."""
+    """Dispatcher standing in for flashgen_core.anki.anki_invoke; records every call."""
 
     def invoke(action, params=None, *args, **kwargs):
         calls.append((action, params))
@@ -646,7 +648,7 @@ class TestCuedCollectionPaths:
             }
         )
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.search_notes(query="大丈夫")
+            result = flashgen_core.anki.search_notes(query="大丈夫")
 
         assert result["count"] == 1
         entry = result["notes"][0]
@@ -664,7 +666,7 @@ class TestCuedCollectionPaths:
             }
         )
         with patch("flashgen_core.anki.anki_invoke", fake):
-            result = flashgen.get_note(100)
+            result = flashgen_core.anki.get_note(100)
 
         assert set(result["fields"]) == set(EXPECTED_FIELDS)
         assert result["model"] == CUED_MODEL
@@ -686,7 +688,7 @@ class TestCuedCollectionPaths:
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file"), \
              patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
-            flashgen.update_note(
+            flashgen_core.service.update_note(
                 100,
                 fields={
                     "japanese": "なんとかなりました。",
@@ -713,7 +715,7 @@ class TestCuedCollectionPaths:
         with patch("flashgen_core.anki.anki_invoke", fake), \
              patch("flashgen_core.audio.generate_tts_file"), \
              patch("flashgen_core.anki.store_media_file", side_effect=lambda path, name: name):
-            flashgen.update_note(100, fields={"notes": "1.写真[しゃしん]: photo"})
+            flashgen_core.service.update_note(100, fields={"notes": "1.写真[しゃしん]: photo"})
 
         updated = fake.params_of("updateNoteFields")[0]["note"]["fields"]
         assert html.unescape(updated["Notes"]) == "1. 写真[しゃしん]: photo"
@@ -747,11 +749,11 @@ class TestCuedCardCountLive:
     @pytest.fixture()
     def test_deck(self):
         with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
-            flashgen.anki_invoke("createDeck", {"deck": _TEST_DECK})
+            flashgen_core.anki.anki_invoke("createDeck", {"deck": _TEST_DECK})
             created_notes = []
             yield created_notes
             if created_notes:
-                flashgen.anki_invoke("deleteNotes", {"notes": created_notes})
+                flashgen_core.anki.anki_invoke("deleteNotes", {"notes": created_notes})
 
     def test_cued_note_yields_exactly_one_card(self, test_deck):
         with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
@@ -767,14 +769,14 @@ class TestCuedCardCountLive:
             )
             test_deck.append(result["note_id"])
 
-            card_ids = flashgen.anki_invoke(
+            card_ids = flashgen_core.anki.anki_invoke(
                 "findCards", {"query": f"nid:{result['note_id']}"}
             )
             assert len(card_ids) == 1, (
                 f"cued note must produce exactly 1 card, got {len(card_ids)}"
             )
 
-            (info,) = flashgen.anki_invoke("notesInfo", {"notes": [result["note_id"]]})
+            (info,) = flashgen_core.anki.anki_invoke("notesInfo", {"notes": [result["note_id"]]})
             assert info["modelName"] == CUED_MODEL
 
     def test_standard_note_with_prompt_still_yields_three_cards(self, test_deck):
@@ -789,7 +791,7 @@ class TestCuedCardCountLive:
             )
             test_deck.append(result["note_id"])
 
-            card_ids = flashgen.anki_invoke(
+            card_ids = flashgen_core.anki.anki_invoke(
                 "findCards", {"query": f"nid:{result['note_id']}"}
             )
             assert len(card_ids) == 3, (

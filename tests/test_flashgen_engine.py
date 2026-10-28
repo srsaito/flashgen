@@ -9,6 +9,9 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 import flashgen
+import flashgen_core.service
+import flashgen_core.audio
+import flashgen_core.anki
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +362,7 @@ class TestAnkiInvoke:
     def test_connection_error_raises_runtime_error(self):
         with patch("flashgen_core.anki.requests.post", side_effect=Exception("refused")):
             with pytest.raises(Exception):
-                flashgen.anki_invoke("version")
+                flashgen_core.anki.anki_invoke("version")
 
     def test_anki_error_in_response_raises_runtime_error(self):
         mock_resp = MagicMock()
@@ -367,14 +370,14 @@ class TestAnkiInvoke:
         mock_resp.raise_for_status.return_value = None
         with patch("flashgen_core.anki.requests.post", return_value=mock_resp):
             with pytest.raises(RuntimeError, match="AnkiConnect error"):
-                flashgen.anki_invoke("deckNames")
+                flashgen_core.anki.anki_invoke("deckNames")
 
     def test_successful_response_returns_result(self):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"error": None, "result": 6}
         mock_resp.raise_for_status.return_value = None
         with patch("flashgen_core.anki.requests.post", return_value=mock_resp):
-            assert flashgen.anki_invoke("version") == 6
+            assert flashgen_core.anki.anki_invoke("version") == 6
 
 
 # ---------------------------------------------------------------------------
@@ -393,32 +396,32 @@ def _make_anki_mock(version=6, deck_names=None, model_names=None):
 class TestCheckAnkiReady:
     def test_passes_when_deck_and_model_exist(self):
         with patch("flashgen_core.anki.anki_invoke", side_effect=_make_anki_mock()):
-            flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
+            flashgen_core.anki.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_when_deck_missing(self):
         with patch("flashgen_core.anki.anki_invoke", side_effect=_make_anki_mock(deck_names=["Other"])):
             with pytest.raises(RuntimeError, match="Deck '.*' not found"):
-                flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
+                flashgen_core.anki.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_when_model_missing(self):
         with patch("flashgen_core.anki.anki_invoke", side_effect=_make_anki_mock(model_names=["Other"])):
             with pytest.raises(RuntimeError, match="Note type '.*' not found"):
-                flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
+                flashgen_core.anki.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_on_bad_version_response(self):
         with patch("flashgen_core.anki.anki_invoke", side_effect=["not-an-int"]):
             with pytest.raises(RuntimeError, match="Unexpected AnkiConnect version"):
-                flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
+                flashgen_core.anki.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_on_bad_deck_names_response(self):
         with patch("flashgen_core.anki.anki_invoke", side_effect=[6, "not-a-list"]):
             with pytest.raises(RuntimeError, match="Unexpected deckNames"):
-                flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
+                flashgen_core.anki.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
     def test_raises_on_bad_model_names_response(self):
         with patch("flashgen_core.anki.anki_invoke", side_effect=[6, ["日本語-Soso"], "not-a-list"]):
             with pytest.raises(RuntimeError, match="Unexpected modelNames"):
-                flashgen.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
+                flashgen_core.anki.check_anki_ready("日本語-Soso", "Japanese Listening+Production")
 
 
 # ---------------------------------------------------------------------------
@@ -429,17 +432,17 @@ class TestAnkiHelperGuards:
     def test_get_model_field_names_bad_response_raises(self):
         with patch("flashgen_core.anki.anki_invoke", return_value="not-a-list"):
             with pytest.raises(RuntimeError, match="Unexpected response from modelFieldNames"):
-                flashgen.get_model_field_names("MyModel")
+                flashgen_core.anki.get_model_field_names("MyModel")
 
     def test_can_add_note_bad_response_raises(self):
         with patch("flashgen_core.anki.anki_invoke", return_value=["not-a-bool"]):
             with pytest.raises(RuntimeError, match="Unexpected response from canAddNotes"):
-                flashgen.can_add_note({"deckName": "x", "modelName": "y", "fields": {}})
+                flashgen_core.anki.can_add_note({"deckName": "x", "modelName": "y", "fields": {}})
 
     def test_find_existing_notes_bad_response_raises(self):
         with patch("flashgen_core.anki.anki_invoke", return_value=["not-an-int", 2]):
             with pytest.raises(RuntimeError, match="non-int note ids"):
-                flashgen.find_existing_notes("MyModel", "日本語テキスト")
+                flashgen_core.anki.find_existing_notes("MyModel", "日本語テキスト")
 
 
 # ---------------------------------------------------------------------------
@@ -451,13 +454,13 @@ class TestGenerateTtsFileMissingKeys:
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         cfg = flashgen.resolve_tts_config("openai", flashgen.OPENAI_TTS_MODEL)
         with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
-            flashgen.generate_tts_file(cfg, "テスト", tmp_path / "out.mp3")
+            flashgen_core.audio.generate_tts_file(cfg, "テスト", tmp_path / "out.mp3")
 
     def test_gemini_missing_api_key_raises(self, monkeypatch, tmp_path):
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         cfg = flashgen.resolve_tts_config("gemini", flashgen.GEMINI_TTS_MODEL)
         with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
-            flashgen.generate_tts_file(cfg, "テスト", tmp_path / "out.wav")
+            flashgen_core.audio.generate_tts_file(cfg, "テスト", tmp_path / "out.wav")
 
 
 # ---------------------------------------------------------------------------
@@ -468,11 +471,11 @@ class TestFillMissingTranslation:
     def test_both_empty_raises(self):
         client = MagicMock()
         with pytest.raises(RuntimeError, match="Both.*empty"):
-            flashgen.fill_missing_translation(client, "", "")
+            flashgen_core.service.fill_missing_translation(client, "", "")
 
     def test_both_present_returns_unchanged(self):
         client = MagicMock()
-        jp, en = flashgen.fill_missing_translation(client, "日本語", "Japanese")
+        jp, en = flashgen_core.service.fill_missing_translation(client, "日本語", "Japanese")
         assert jp == "日本語"
         assert en == "Japanese"
         client.responses.create.assert_not_called()
@@ -480,14 +483,14 @@ class TestFillMissingTranslation:
     def test_missing_english_calls_translation(self):
         client = MagicMock()
         client.responses.create.return_value.output_text = "I took a photo."
-        jp, en = flashgen.fill_missing_translation(client, "写真を撮りました。", "")
+        jp, en = flashgen_core.service.fill_missing_translation(client, "写真を撮りました。", "")
         assert jp == "写真を撮りました。"
         assert en == "I took a photo."
 
     def test_missing_japanese_calls_translation(self):
         client = MagicMock()
         client.responses.create.return_value.output_text = "写真を撮りました。"
-        jp, en = flashgen.fill_missing_translation(client, "", "I took a photo.")
+        jp, en = flashgen_core.service.fill_missing_translation(client, "", "I took a photo.")
         assert jp == "写真を撮りました。"
         assert en == "I took a photo."
 
@@ -495,7 +498,7 @@ class TestFillMissingTranslation:
         client = MagicMock()
         client.responses.create.return_value.output_text = "   "
         with pytest.raises(RuntimeError, match="empty output"):
-            flashgen.fill_missing_translation(client, "日本語", "")
+            flashgen_core.service.fill_missing_translation(client, "日本語", "")
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +511,7 @@ class TestAddNoteDuplicate:
              patch("flashgen_core.anki.find_existing_notes", return_value=[12345]), \
              patch("flashgen_core.anki.get_notes_info", return_value=[{"noteId": 12345}]):
             with pytest.raises(RuntimeError, match="cannot be added"):
-                flashgen.add_note(
+                flashgen_core.anki.add_note(
                     deck_name="日本語-Soso",
                     model_name="Japanese Listening+Production",
                     japanese="写真を撮りました。",

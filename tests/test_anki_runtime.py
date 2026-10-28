@@ -122,17 +122,17 @@ class TestAnkiProfilePersistence:
 @_needs_anki
 class TestFlashgenMcpNetworkReachability:
     def test_flashgen_module_reads_anki_connect_url_from_env(self) -> None:
-        """flashgen.ANKI_CONNECT_URL must equal the ANKI_CONNECT_URL env var."""
-        assert flashgen.ANKI_CONNECT_URL == _ANKI_CONNECT_URL, (
-            f"flashgen.ANKI_CONNECT_URL is '{flashgen.ANKI_CONNECT_URL}' but "
+        """flashgen_core.anki.ANKI_CONNECT_URL must equal the ANKI_CONNECT_URL env var."""
+        assert flashgen_core.anki.ANKI_CONNECT_URL == _ANKI_CONNECT_URL, (
+            f"flashgen_core.anki.ANKI_CONNECT_URL is '{flashgen_core.anki.ANKI_CONNECT_URL}' but "
             f"ANKI_CONNECT_URL env var is '{_ANKI_CONNECT_URL}'. "
             "Update flashgen.py to read ANKI_CONNECT_URL from os.environ."
         )
 
     def test_flashgen_anki_invoke_reaches_anki_connect(self) -> None:
-        """flashgen.anki_invoke('version') must succeed with the configured URL."""
+        """flashgen_core.anki.anki_invoke('version') must succeed with the configured URL."""
         with patch.object(flashgen_core.anki, "ANKI_CONNECT_URL", _ANKI_CONNECT_URL):
-            result = flashgen.anki_invoke("version")
+            result = flashgen_core.anki.anki_invoke("version")
         assert isinstance(result, int), f"Expected integer version, got {result!r}"
 
 
