@@ -2,14 +2,14 @@ import base64
 import hashlib
 import html
 import json
+import logging
 import secrets
 import time
 
-import requests as _requests
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from flashgen_core import anki, config, furigana, service
+from flashgen_core import anki, config, errors, furigana, service
 from flashgen_mcp.schema import (
     CardRequest,
     DeleteNotesRequest,
@@ -22,7 +22,12 @@ from flashgen_mcp.schema import (
 # over a plaintext env var, so the bearer token stays out of `docker inspect`.
 _MCP_TOKEN = config.read_secret("FLASHGEN_MCP_TOKEN")
 
-_ISSUER = "https://mcp.ssaito.net"
+_ISSUER = config.MCP_ISSUER
+
+# One structured JSON line per tool call, so a session can be reconstructed
+# from the container log without the card text being in it (flashgen-yya).
+logger = logging.getLogger("flashgen.mcp")
+logger.setLevel(config.LOG_LEVEL)
 _oauth_codes: dict[str, dict] = {}  # auth_code → {code_challenge, redirect_uri, expires}
 
 
@@ -38,8 +43,6 @@ def _pkce_verify(verifier: str, challenge: str) -> bool:
     digest = hashlib.sha256(verifier.encode()).digest()
     computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
     return computed == challenge
-
-_ANKI_CONNECT_PHRASES = ("AnkiConnect", "Could not connect to Anki")
 
 _CARD_INPUT_SCHEMA = {
     "type": "object",
@@ -307,14 +310,6 @@ _SERVER_INFO = {
 }
 
 
-def _is_anki_error(msg: str) -> bool:
-    return any(phrase in msg for phrase in _ANKI_CONNECT_PHRASES)
-
-
-def _is_missing_api_key(msg: str) -> bool:
-    return "_API_KEY" in msg and "is not set" in msg
-
-
 # Fields the Anki templates render with {{furigana:...}}.
 _FURIGANA_FIELDS = ("japanese", "japanese_prompt", "notes")
 
@@ -412,31 +407,121 @@ def _rpc_error(id_, code: int, message: str) -> JSONResponse:
     return JSONResponse({"jsonrpc": "2.0", "id": id_, "error": {"code": code, "message": message}})
 
 
-def _tool_error_content(error_key: str, message: str) -> dict:
+def _tool_error_content(info: errors.ErrorInfo) -> dict:
     return {
-        "content": [{"type": "text", "text": json.dumps({"error": error_key, "message": message})}],
+        "content": [{"type": "text", "text": json.dumps(info.payload())}],
         "isError": True,
     }
 
 
-def _engine_result(rpc_id, fn) -> JSONResponse:
-    """Call an Anki-backed engine function, mapping its failures to tool errors."""
-    try:
-        result = fn()
-        return _rpc_ok(rpc_id, {"content": [{"type": "text", "text": json.dumps(result)}]})
-    except _requests.exceptions.ConnectionError as exc:
-        return _rpc_ok(rpc_id, _tool_error_content("anki_unavailable", str(exc)))
-    except RuntimeError as exc:
-        msg = str(exc)
-        if _is_anki_error(msg):
-            return _rpc_ok(rpc_id, _tool_error_content("anki_unavailable", msg))
-        if _is_missing_api_key(msg):
-            return _rpc_ok(rpc_id, _tool_error_content("missing_api_key", msg))
-        return _rpc_ok(rpc_id, _tool_error_content("engine_error", msg))
+def _tool_content(result) -> dict:
+    return {"content": [{"type": "text", "text": json.dumps(result)}]}
+
+
+class _UnknownTool(Exception):
+    """tools/call named something this server does not serve."""
+
+
+def _run_tool(name: str, args: dict):
+    """Parse the arguments, run the tool, and return its result.
+
+    Raises: a pydantic error if the arguments are wrong, a FlashGenError (or
+    another RuntimeError) from the engine, or _UnknownTool. Nothing is caught
+    here — the single handler in mcp_handler classifies and logs every failure,
+    so argument errors and engine errors cannot drift apart.
+    """
+    if name == "validate_flashcard":
+        return _validate_args(args)
+
+    if name == "create_flashcard":
+        return _create_args(args)
+
+    if name == "search_notes":
+        req = SearchNotesRequest(**args)
+        return anki.search_notes(
+            query=req.query,
+            deck=req.deck,
+            limit=req.limit,
+            match_field=req.match_field,
+        )
+
+    if name == "get_note":
+        return anki.get_note(GetNoteRequest(**args).note_id)
+
+    if name == "list_decks":
+        return anki.list_decks()
+
+    if name == "list_tags":
+        return anki.list_tags()
+
+    if name == "delete_notes":
+        return anki.delete_notes(DeleteNotesRequest(**args).note_ids)
+
+    if name == "update_note":
+        req = UpdateNoteRequest(**args)
+        return service.update_note(
+            req.note_id,
+            fields=req.fields,
+            tags=req.tags,
+            tts_provider=req.tts_provider,
+            tts_model=req.tts_model,
+        )
+
+    raise _UnknownTool(name)
+
+
+def _log_tool_call(
+    name: str,
+    args: dict,
+    *,
+    outcome: str,
+    started: float,
+    door: str = "mcp",
+    error_code: str | None = None,
+    result=None,
+) -> None:
+    """Log one call as a single JSON line.
+
+    ⭐ ARGUMENT NAMES ONLY, NEVER VALUES: the arguments are the card text the
+    user is studying. Logging keys gives enough to reconstruct a session and
+    debug a bad call without copying the content into the container log.
+    """
+    entry = {
+        "event": "mcp_tool_call",
+        # Which front door was used: the MCP tool call, or POST /create.
+        "door": door,
+        "tool": name,
+        "outcome": outcome,
+        "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+        "args": sorted(k for k in args if args[k] not in (None, "", [], {})),
+    }
+    if isinstance(args.get("deck"), str) and args["deck"]:
+        entry["deck"] = args["deck"]
+    if isinstance(args.get("card_type"), str):
+        entry["card_type"] = args["card_type"]
+    if error_code:
+        entry["error"] = error_code
+    if isinstance(result, dict):
+        for key in ("note_id", "status", "count"):
+            if key in result:
+                entry[key] = result[key]
+    logger.info(json.dumps(entry, ensure_ascii=False))
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="FlashGen MCP", version="0.1.0")
+
+    logger.info(
+        json.dumps(
+            {
+                "event": "mcp_startup",
+                "issuer": _ISSUER,
+                "auth": "bearer" if _MCP_TOKEN else "open",
+                "config": config.effective_config(),
+            },
+            ensure_ascii=False,
+        )
+    )
 
     @app.get("/.well-known/oauth-authorization-server")
     async def oauth_metadata() -> JSONResponse:
@@ -539,9 +624,23 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
     async def health() -> JSONResponse:
         try:
             anki.anki_invoke("version")
-            return JSONResponse(status_code=200, content={"ok": True})
-        except Exception:
-            return JSONResponse(status_code=503, content={"ok": False, "anki": False})
+        except Exception as exc:
+            info = errors.classify(exc)
+            logger.warning(
+                json.dumps({"event": "health_check", "ok": False, "reason": info.code})
+            )
+            # "anki" is kept for the existing container healthcheck; "reason"
+            # and "message" are what says WHY without reading the log.
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "ok": False,
+                    "anki": False,
+                    "reason": info.code,
+                    "message": info.message,
+                },
+            )
+        return JSONResponse(status_code=200, content={"ok": True})
 
     @app.get("/mcp")
     async def mcp_discovery() -> JSONResponse:
@@ -572,58 +671,25 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
         if method == "tools/call":
             name = params.get("name")
             args = params.get("arguments") or {}
+            started = time.perf_counter()
 
             try:
-                if name == "validate_flashcard":
-                    result = _validate_args(args)
-                    return _rpc_ok(rpc_id, {"content": [{"type": "text", "text": json.dumps(result)}]})
-
-                if name == "create_flashcard":
-                    return _engine_result(rpc_id, lambda: _create_args(args))
-
-                if name == "search_notes":
-                    req = SearchNotesRequest(**args)
-                    return _engine_result(
-                        rpc_id,
-                        lambda: anki.search_notes(
-                            query=req.query,
-                            deck=req.deck,
-                            limit=req.limit,
-                            match_field=req.match_field,
-                        ),
-                    )
-
-                if name == "get_note":
-                    req = GetNoteRequest(**args)
-                    return _engine_result(rpc_id, lambda: anki.get_note(req.note_id))
-
-                if name == "list_decks":
-                    return _engine_result(rpc_id, anki.list_decks)
-
-                if name == "list_tags":
-                    return _engine_result(rpc_id, anki.list_tags)
-
-                if name == "delete_notes":
-                    req = DeleteNotesRequest(**args)
-                    return _engine_result(rpc_id, lambda: anki.delete_notes(req.note_ids))
-
-                if name == "update_note":
-                    req = UpdateNoteRequest(**args)
-                    return _engine_result(
-                        rpc_id,
-                        lambda: service.update_note(
-                            req.note_id,
-                            fields=req.fields,
-                            tags=req.tags,
-                            tts_provider=req.tts_provider,
-                            tts_model=req.tts_model,
-                        ),
-                    )
-
+                result = _run_tool(name, args)
+            except _UnknownTool:
+                _log_tool_call(name, args, outcome="unknown_tool", started=started)
                 return _rpc_error(rpc_id, -32601, f"Unknown tool: {name}")
-
             except Exception as exc:
-                return _rpc_ok(rpc_id, _tool_error_content("validation_error", str(exc)))
+                # One classifier for both front doors. The default covers what
+                # is neither a FlashGenError nor a RuntimeError — a pydantic
+                # argument error, where the caller's input is the only suspect.
+                info = errors.classify(exc, default=errors.VALIDATION_ERROR)
+                _log_tool_call(
+                    name, args, outcome="error", started=started, error_code=info.code
+                )
+                return _rpc_ok(rpc_id, _tool_error_content(info))
+
+            _log_tool_call(name, args, outcome="ok", started=started, result=result)
+            return _rpc_ok(rpc_id, _tool_content(result))
 
         return _rpc_error(rpc_id, -32601, f"Method not found: {method}")
 
@@ -633,6 +699,7 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
 
     @app.post("/create")
     async def create(req: CardRequest) -> JSONResponse:
+        started = time.perf_counter()
         try:
             result = service.create_flashcard(
                 japanese=req.japanese,
@@ -648,27 +715,27 @@ button{{padding:10px 24px;font-size:16px;cursor:pointer}}</style></head>
                 tts_model=req.tts_model,
                 card_type=req.card_type,
             )
-        except _requests.exceptions.ConnectionError as exc:
-            return JSONResponse(
-                status_code=503,
-                content={"error": "anki_unavailable", "message": str(exc)},
+        except Exception as exc:
+            # Same codes and the same messages as the MCP tool door; only the
+            # HTTP status is added, from the code (errors.CODE_HTTP_STATUS).
+            info = errors.classify(exc)
+            _log_tool_call(
+                "create_flashcard",
+                {"deck": req.deck or "", "card_type": req.card_type},
+                outcome="error",
+                started=started,
+                door="rest",
+                error_code=info.code,
             )
-        except RuntimeError as exc:
-            msg = str(exc)
-            if _is_anki_error(msg):
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "anki_unavailable", "message": msg},
-                )
-            if _is_missing_api_key(msg):
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "missing_api_key", "message": msg},
-                )
-            return JSONResponse(
-                status_code=400,
-                content={"error": "engine_error", "message": msg},
-            )
+            return JSONResponse(status_code=info.http_status, content=info.payload())
+        _log_tool_call(
+            "create_flashcard",
+            {"deck": req.deck or "", "card_type": req.card_type},
+            outcome="ok",
+            started=started,
+            door="rest",
+            result=result,
+        )
         return JSONResponse(status_code=200, content=result)
 
     return app

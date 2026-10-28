@@ -14,6 +14,7 @@ from typing import Any
 import json_repair
 
 from flashgen_core.config import DECK_NAME, DEFAULT_TAGS, debug_print
+from flashgen_core.errors import ValidationError, classify
 from flashgen_core.service import create_flashcard
 
 # ---------------------------------------------------------------------------
@@ -88,13 +89,13 @@ def read_json_input() -> dict[str, Any]:
     try:
         data = json_repair.loads(raw)
     except Exception as e:
-        raise RuntimeError(
+        raise ValidationError(
             "Failed to parse JSON from stdin. "
             'Expected JSON like: {"japanese":"...","english":"...","notes":"...","tags":["jp"]}'
         ) from e
 
     if not isinstance(data, dict):
-        raise RuntimeError("Input JSON must be an object.")
+        raise ValidationError("Input JSON must be an object.")
 
     return data
 
@@ -124,7 +125,7 @@ def main() -> None:
         elif isinstance(raw_tags, list) and all(isinstance(tag, str) for tag in raw_tags):
             tags = raw_tags
         else:
-            raise RuntimeError("'tags' must be a list of strings if provided.")
+            raise ValidationError("'tags' must be a list of strings if provided.")
 
         debug_print(
             "parsed fields",
@@ -161,11 +162,16 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
     except Exception as e:
+        # Same error key and message the MCP server would report for this
+        # failure — one classifier serves both front doors (flashgen-yya).
+        # "status" stays alongside it so existing readers of the CLI envelope
+        # keep working.
+        info = classify(e)
         print(
             json.dumps(
                 {
                     "status": "error",
-                    "message": str(e),
+                    **info.payload(),
                 },
                 ensure_ascii=False,
                 indent=2,

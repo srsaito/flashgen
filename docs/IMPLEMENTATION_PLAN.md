@@ -175,11 +175,46 @@ that now DEFINES the name; no assertion or payload changed.
 
 17. Harden configuration, errors, logging, and runtime health checks.
 
-**Acceptance tests** (`tests/test_error_contract.py`):
+**Acceptance tests** (`tests/test_error_contract.py`) — all met (flashgen-oxs
+wrote them red, flashgen-yya made them pass):
 - AnkiConnect unavailable → `{"error": "anki_unavailable", "message": "..."}` from both CLI and MCP
 - Deck missing → `{"error": "deck_missing", "message": "..."}`
 - Duplicate note → `{"error": "duplicate_note", "message": "..."}`
 - Health endpoint returns `{"ok": false, "reason": "anki_unavailable"}` when AnkiConnect is down
+
+#### The error contract
+
+`flashgen_core/errors.py` defines one code per failure mode, a typed exception
+that carries it, and the single `classify()` both front doors call. The CLI
+prints `{"status": "error", "error": <code>, "message": ...}`; the MCP tool door
+returns the same pair as an `isError` result; `POST /create` returns it with the
+status below.
+
+| code | HTTP | raised by |
+| --- | --- | --- |
+| `anki_unavailable` | 503 | `anki_invoke` — refused, timed out, or non-2xx |
+| `deck_missing` | 400 | `check_anki_ready`; the message lists the decks |
+| `note_type_missing` | 400 | `check_anki_ready` for the note type |
+| `duplicate_note` | 409 | `add_note` when `canAddNotes` says no |
+| `missing_api_key` | 503 | a TTS/translation key that is not configured |
+| `validation_error` | 400 | bad caller input, nothing attempted |
+| `engine_error` | 400 | anything else |
+
+⭐ Classification is by exception TYPE, never by message text. The message
+substring rules that remain in `classify()` are a last resort for RuntimeErrors
+raised outside the engine: `add_note`'s duplicate message begins "AnkiConnect
+says this note cannot be added.", so string-sniffing reported a duplicate as an
+outage — the bug flashgen-oxs caught.
+
+**Also in this phase**
+- Every deployment-varying constant moved to `flashgen_core.config` behind an
+  env var with the old value as default (`.env.example` lists them), so both
+  front doors are configured identically.
+- `flashgen.mcp` logs one JSON line per MCP tool call — tool, outcome,
+  duration, error code, argument NAMES only (never the card text) — plus the
+  resolved config at startup.
+- `/health` adds `reason` and `message`; it keeps `anki` for compatibility, and
+  the container healthcheck still polls `/mcp`, not this endpoint.
 
 ## Claude Remote MCP Work
 

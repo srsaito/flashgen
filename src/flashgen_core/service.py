@@ -21,6 +21,7 @@ from flashgen_core.config import (
     debug_print,
     read_secret,
 )
+from flashgen_core.errors import MissingApiKey, ValidationError
 from flashgen_core.furigana import (
     _reject_bad_markup,
     normalize_furigana_text,
@@ -50,7 +51,9 @@ def fill_missing_translation(
     english = english.strip()
 
     if not japanese and not english:
-        raise RuntimeError("Both 'japanese' and 'english' are empty. Provide at least one.")
+        raise ValidationError(
+            "Both 'japanese' and 'english' are empty. Provide at least one."
+        )
 
     if japanese and english:
         return japanese, english
@@ -99,7 +102,7 @@ def create_flashcard(
     card_type: str = "standard",
 ) -> dict[str, Any]:
     if card_type not in CARD_TYPES:
-        raise RuntimeError(f"'card_type' must be one of: {', '.join(CARD_TYPES)}.")
+        raise ValidationError(f"'card_type' must be one of: {', '.join(CARD_TYPES)}.")
 
     _reject_bad_markup(
         japanese=japanese,
@@ -114,7 +117,7 @@ def create_flashcard(
 
     if card_type in GENERATED_MODELS:
         if not japanese_prompt.strip():
-            raise RuntimeError(
+            raise ValidationError(
                 f"card_type '{card_type}' requires a non-empty 'japanese_prompt' "
                 f"— {GENERATED_MODELS[card_type]['prompt_required_because']}."
             )
@@ -132,7 +135,7 @@ def create_flashcard(
     if not japanese.strip() or not english.strip():
         api_key = read_secret("OPENAI_API_KEY")
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is not set.")
+            raise MissingApiKey("OPENAI_API_KEY is not set.")
         client = OpenAI(api_key=api_key)
         japanese, english = fill_missing_translation(client, japanese, english)
 
@@ -242,16 +245,16 @@ def update_note(
     fields = fields or {}
     unknown = set(fields) - UPDATABLE_FIELDS
     if unknown:
-        raise RuntimeError(
+        raise ValidationError(
             f"Unknown field(s): {', '.join(sorted(unknown))}. "
             f"Updatable fields: {', '.join(sorted(UPDATABLE_FIELDS))}."
         )
     if not fields and tags is None:
-        raise RuntimeError("Provide 'fields' and/or 'tags' to update.")
+        raise ValidationError("Provide 'fields' and/or 'tags' to update.")
     if tags is not None and (
         not isinstance(tags, list) or not all(isinstance(t, str) for t in tags)
     ):
-        raise RuntimeError("'tags' must be a list of strings.")
+        raise ValidationError("'tags' must be a list of strings.")
 
     _reject_bad_markup(
         **{k: v for k, v in fields.items() if not k.endswith("_tts")}

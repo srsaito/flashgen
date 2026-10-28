@@ -19,6 +19,7 @@ from flashgen_core.config import (
     TTSConfig,
     read_secret,
 )
+from flashgen_core.errors import MissingApiKey, ValidationError
 
 def safe_filename_stem(text: str, max_len: int = 24) -> str:
     cleaned = re.sub(r"[^\w\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]+", "_", text)
@@ -40,7 +41,7 @@ def resolve_tts_config(
     model = (tts_model or "").strip()
 
     if bool(provider) != bool(model):
-        raise RuntimeError("'tts_provider' and 'tts_model' must be provided together.")
+        raise ValidationError("'tts_provider' and 'tts_model' must be provided together.")
 
     if not provider and not model:
         provider = DEFAULT_TTS_PROVIDER
@@ -54,10 +55,10 @@ def resolve_tts_config(
         extension = ".wav"
         voice = GEMINI_TTS_VOICE
     else:
-        raise RuntimeError("'tts_provider' must be one of: openai, gemini.")
+        raise ValidationError("'tts_provider' must be one of: openai, gemini.")
 
     if not model:
-        raise RuntimeError("'tts_model' must be a non-empty string.")
+        raise ValidationError("'tts_model' must be a non-empty string.")
 
     return TTSConfig(
         provider=provider,
@@ -155,7 +156,7 @@ def generate_tts_file(tts_config: TTSConfig, text: str, out_path: Path) -> None:
     if tts_config.provider == "openai":
         api_key = read_secret("OPENAI_API_KEY")
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is not set.")
+            raise MissingApiKey("OPENAI_API_KEY is not set.")
         generate_openai_tts_file(
             OpenAI(api_key=api_key),
             tts_config,
@@ -167,7 +168,7 @@ def generate_tts_file(tts_config: TTSConfig, text: str, out_path: Path) -> None:
     if tts_config.provider == "gemini":
         api_key = read_secret("GEMINI_API_KEY")
         if not api_key:
-            raise RuntimeError("GEMINI_API_KEY is not set.")
+            raise MissingApiKey("GEMINI_API_KEY is not set.")
         generate_gemini_tts_file(api_key, tts_config, text, out_path)
         return
 

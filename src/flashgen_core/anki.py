@@ -12,11 +12,21 @@ from typing import Any
 import requests
 
 from flashgen_core.config import (
+    ANKI_CONNECT_TIMEOUT,
     ANKI_CONNECT_URL,
     GENERATED_MODEL_CSS,
     GENERATED_MODEL_FIELDS,
     GENERATED_MODELS,
+    SEARCH_CANDIDATE_CAP,
+    SEARCH_FIELD_VALUE_MAX,
     debug_print,
+)
+from flashgen_core.errors import (
+    AnkiUnavailable,
+    DeckMissing,
+    DuplicateNote,
+    NoteTypeMissing,
+    ValidationError,
 )
 from flashgen_core.furigana import (
     _BR_TAG_RE,
@@ -36,18 +46,35 @@ def anki_invoke(action: str, params: dict | None = None) -> object:
     }
 
     try:
-        response = requests.post(ANKI_CONNECT_URL, json=payload, timeout=30)
-        response.raise_for_status()
-    except requests.exceptions.ConnectionError as e:
-        raise RuntimeError(
+        response = requests.post(ANKI_CONNECT_URL, json=payload, timeout=ANKI_CONNECT_TIMEOUT)
+    except requests.exceptions.RequestException as e:
+        # Refused, timed out, DNS: one condition from the caller's side —
+        # AnkiConnect is not answering.
+        raise AnkiUnavailable(
             f"Could not connect to AnkiConnect at {ANKI_CONNECT_URL}. "
             "Make sure Anki is open and the AnkiConnect add-on is installed and enabled."
+        ) from e
+
+    try:
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        # Something answered but it was not a working AnkiConnect — a proxy
+        # error page, or the add-on mid-restart. Still "unavailable", but say
+        # what came back instead of claiming nothing was reachable.
+        raise AnkiUnavailable(
+            f"AnkiConnect at {ANKI_CONNECT_URL} answered HTTP "
+            f"{response.status_code} for '{action}'."
         ) from e
 
     data = response.json()
 
     if data.get("error") is not None:
-        raise RuntimeError(f"AnkiConnect error on '{action}': {data['error']}")
+        message = f"AnkiConnect error on '{action}': {data['error']}"
+        # Anki itself can be the one to spot the duplicate (addNote without a
+        # preceding canAddNotes check); that is not an outage.
+        if "duplicate" in str(data["error"]).lower():
+            raise DuplicateNote(message)
+        raise RuntimeError(message)
 
     return data.get("result")
 
@@ -66,7 +93,9 @@ def check_anki_ready(deck_name: str, model_name: str | None = None) -> None:
     if not isinstance(deck_names, list):
         raise RuntimeError(f"Unexpected deckNames response: {deck_names!r}")
     if deck_name not in deck_names:
-        raise RuntimeError(
+        # The message lists the decks on purpose: the MCP server instructions
+        # promise the caller can recover from it without another round trip.
+        raise DeckMissing(
             f"Deck '{deck_name}' not found.\n"
             f"Available decks: {deck_names}"
         )
@@ -78,7 +107,7 @@ def check_anki_ready(deck_name: str, model_name: str | None = None) -> None:
     if not isinstance(model_names, list):
         raise RuntimeError(f"Unexpected modelNames response: {model_names!r}")
     if model_name not in model_names:
-        raise RuntimeError(
+        raise NoteTypeMissing(
             f"Note type '{model_name}' not found.\n"
             f"Available note types: {model_names}"
         )
@@ -221,7 +250,7 @@ def add_note(
     if not allowed:
         existing = find_existing_notes(model_name, japanese)
         info = get_notes_info(existing) if existing else []
-        raise RuntimeError(
+        raise DuplicateNote(
             "AnkiConnect says this note cannot be added.\n"
             f"Japanese field: {japanese}\n"
             f"Existing note ids: {existing}\n"
@@ -235,13 +264,11 @@ def add_note(
 
 SEARCH_MATCH_FIELDS = ("japanese_tts", "japanese", "english", "any")
 
-# search_notes truncates field values in results so a broad query can't dump
-# whole notes into the caller's context; get_note returns full values.
-_FIELD_VALUE_MAX = 400
-
-# Post-filtering needs notesInfo per candidate, so cap how many candidates a
-# single search will fetch before filtering.
-_SEARCH_CANDIDATE_CAP = 500
+# Both result-shaping caps now live in config, env-overridable:
+# SEARCH_FIELD_VALUE_MAX truncates field values so a broad query can't dump
+# whole notes into the caller's context (get_note returns full values), and
+# SEARCH_CANDIDATE_CAP bounds how many notes one search fetches for the
+# Python post-filter.
 
 
 def list_decks() -> list[str]:
@@ -306,8 +333,8 @@ def _note_entry(
     fields = {}
     for name, cell in (info.get("fields") or {}).items():
         value = cell.get("value", "") if isinstance(cell, dict) else str(cell)
-        if not full_fields and len(value) > _FIELD_VALUE_MAX:
-            value = value[:_FIELD_VALUE_MAX] + "…"
+        if not full_fields and len(value) > SEARCH_FIELD_VALUE_MAX:
+            value = value[:SEARCH_FIELD_VALUE_MAX] + "…"
         fields[name] = value
     cards = cards or {}
     card_ids = cards.get("card_ids", [])
@@ -356,15 +383,15 @@ def search_notes(
     match_field: str = "japanese_tts",
 ) -> dict[str, Any]:
     if match_field not in SEARCH_MATCH_FIELDS:
-        raise RuntimeError(
+        raise ValidationError(
             f"'match_field' must be one of: {', '.join(SEARCH_MATCH_FIELDS)}."
         )
     if not isinstance(limit, int) or limit < 1:
-        raise RuntimeError("'limit' must be a positive integer.")
+        raise ValidationError("'limit' must be a positive integer.")
 
     query = (query or "").strip()
     if not query and not deck:
-        raise RuntimeError("Provide 'query' and/or 'deck'.")
+        raise ValidationError("Provide 'query' and/or 'deck'.")
 
     # A query containing Anki operators (deck:, tag:, nid:, field:...), quoted
     # phrases, or wildcards is passed through as-is; bare words get per-field
@@ -391,8 +418,8 @@ def search_notes(
         anki_query = f"{anki_query} {deck_term}".strip()
 
     note_ids = _find_note_ids(anki_query)
-    truncated = len(note_ids) > _SEARCH_CANDIDATE_CAP
-    note_ids = note_ids[:_SEARCH_CANDIDATE_CAP]
+    truncated = len(note_ids) > SEARCH_CANDIDATE_CAP
+    note_ids = note_ids[:SEARCH_CANDIDATE_CAP]
 
     infos = get_notes_info(note_ids) if note_ids else []
     if not isinstance(infos, list):
@@ -436,7 +463,7 @@ def delete_notes(note_ids: list[int]) -> dict[str, Any]:
     if not isinstance(note_ids, list) or not note_ids or not all(
         isinstance(x, int) for x in note_ids
     ):
-        raise RuntimeError("'note_ids' must be a non-empty list of integers.")
+        raise ValidationError("'note_ids' must be a non-empty list of integers.")
     infos = get_notes_info(note_ids)
     if not isinstance(infos, list):
         raise RuntimeError(f"Unexpected response from notesInfo: {infos!r}")

@@ -9,6 +9,8 @@ import html
 import re
 import unicodedata
 
+from flashgen_core.errors import ValidationError
+
 ANNOTATED_KANJI_RE = re.compile(
     r"[\u0020\u3000]*([\u3400-\u4dbf\u4e00-\u9fff々〆ヶ]+)\[([^\]]+)\]"
 )
@@ -135,7 +137,7 @@ def _reject_bad_markup(**fields: str) -> None:
     for label, value in fields.items():
         problems = markup_errors(value)
         if problems:
-            raise RuntimeError(f"Invalid markup in '{label}': " + "; ".join(problems))
+            raise ValidationError(f"Invalid markup in '{label}': " + "; ".join(problems))
 
 
 def markup_errors(text: str) -> list[str]:

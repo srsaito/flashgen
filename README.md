@@ -106,14 +106,16 @@ export OPENAI_API_KEY="sk-..."
 
 ### 4. Configure flashgen
 
-Open `src/flashgen.py` and update the constants at the top of the file to match your Anki setup:
+Point FlashGen at your Anki setup with environment variables — the same names serve the CLI and the MCP server, and each one defaults to the value shown, so you only set what you want to change:
 
-```python
-DECK_NAME  = "日本語-Soso"                    # Your Anki deck name
-MODEL_NAME = "Japanese Listening+Production"  # Your note type name (see Anki Setup below)
+```zsh
+export FLASHGEN_DECK="日本語-Soso"                    # Your Anki deck name
+export FLASHGEN_MODEL="Japanese Listening+Production" # Your note type name (see Anki Setup below)
 ```
 
-You can also adjust the default TTS provider, provider-specific voices/models, and default tags here. As of May 4, 2026, the repo defaults to Gemini TTS with `gemini-3.1-flash-tts-preview` and the `Algenib` voice, and uses `gpt-4o-mini-tts` with the `onyx` voice when `tts_provider` is set to `openai`. FlashGen does not maintain a provider-specific model allowlist, so `tts_provider: "gemini"` can also be paired with another valid Gemini TTS model string such as `gemini-2.5-flash-preview-tts`.
+`.env.example` lists every override — deck and note-type names, TTS provider/model/voice, default tags, output directory, AnkiConnect URL and timeout, log level. The defaults themselves live in `src/flashgen_core/config.py`, which is also where to change them permanently.
+
+You can also adjust the default TTS provider, provider-specific voices/models, and default tags this way. As of May 4, 2026, the repo defaults to Gemini TTS with `gemini-3.1-flash-tts-preview` and the `Algenib` voice, and uses `gpt-4o-mini-tts` with the `onyx` voice when `tts_provider` is set to `openai`. FlashGen does not maintain a provider-specific model allowlist, so `tts_provider: "gemini"` can also be paired with another valid Gemini TTS model string such as `gemini-2.5-flash-preview-tts`.
 
 ### 5. Add the `flashgen` alias to `~/.zshrc`
 
@@ -400,6 +402,20 @@ At least one of `japanese` or `english` is required. `japanese_prompt` and `engl
   "audio_prompt_file": "filename.wav (only present for Response cards)"
 }
 ```
+
+### Output on failure
+
+Nothing is created, the exit status is 1, and the JSON names the failure:
+
+```json
+{
+  "status":  "error",
+  "error":   "deck_missing",
+  "message": "Deck 'Nihongo' not found.\nAvailable decks: ['日本語-Soso', 'Default']"
+}
+```
+
+`error` is a stable machine-readable code — `anki_unavailable`, `deck_missing`, `note_type_missing`, `duplicate_note`, `missing_api_key`, `validation_error`, or `engine_error` — so a script can branch on it while `message` stays free to change. The MCP server reports the identical code and message for the same failure (as an `isError` tool result, or on `POST /create` with a matching HTTP status), because both front doors classify through one module, `flashgen_core/errors.py`.
 
 The returned `japanese` and `japanese_prompt` fields are the display text for Anki and contain FlashGen-normalized furigana. The returned `_tts` fields are the plain Japanese strings actually sent to the TTS engine. When Gemini TTS is used, `audio_file` and `audio_prompt_file` end in `.wav`. When OpenAI TTS is used, they end in `.mp3`.
 

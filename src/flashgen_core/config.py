@@ -1,4 +1,16 @@
-"""Constants, note-type definitions, secret reading, debug output."""
+"""Constants, note-type definitions, secret reading, debug output.
+
+Every value a deployment might need to change reads from the environment with
+the old hardcoded value as its default (flashgen-yya), so the CLI and the MCP
+server are configured the same way — same variable names, same defaults, one
+module. `.env.example` documents them.
+
+Values are read at IMPORT, so setting an env var later changes nothing in a
+running process, and other modules that imported a name hold their own copy.
+A test needing different values loads a separate copy of this module rather
+than reloading it — see load_config() in tests/test_logging_and_config.py for
+why reloading breaks the facade's identity invariant.
+"""
 from __future__ import annotations
 
 import json
@@ -8,17 +20,72 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+
+def _env_str(name: str, default: str) -> str:
+    value = os.environ.get(name, "")
+    return value.strip() or default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"{name}={raw!r} is not an integer — using {default}", file=sys.stderr)
+        return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
+def _env_list(name: str, default: list[str]) -> list[str]:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 # -----------------------------
 # Configuration
 # -----------------------------
-DEFAULT_TTS_PROVIDER = "gemini"
-OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
-OPENAI_TTS_VOICE = "onyx"
-GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview"
-GEMINI_TTS_VOICE = "Algenib"
-OPENAI_TEXT_MODEL = "gpt-4.1-mini"
+DEFAULT_TTS_PROVIDER = _env_str("FLASHGEN_TTS_PROVIDER", "gemini")
+OPENAI_TTS_MODEL = _env_str("FLASHGEN_OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+OPENAI_TTS_VOICE = _env_str("FLASHGEN_OPENAI_TTS_VOICE", "onyx")
+GEMINI_TTS_MODEL = _env_str("FLASHGEN_GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
+GEMINI_TTS_VOICE = _env_str("FLASHGEN_GEMINI_TTS_VOICE", "Algenib")
+OPENAI_TEXT_MODEL = _env_str("FLASHGEN_OPENAI_TEXT_MODEL", "gpt-4.1-mini")
 
-ANKI_CONNECT_URL = os.environ.get("ANKI_CONNECT_URL", "http://127.0.0.1:8765")
+ANKI_CONNECT_URL = _env_str("ANKI_CONNECT_URL", "http://127.0.0.1:8765")
+# Seconds to wait on one AnkiConnect call. A full-sync or a large findNotes can
+# be slow, so this is a ceiling on hanging, not a latency budget.
+ANKI_CONNECT_TIMEOUT = _env_int("ANKI_CONNECT_TIMEOUT", 30)
+
+# Logging: one structured line per MCP tool call (flashgen_mcp.app). Only the
+# standard level names are accepted — a typo must not stop the server booting,
+# so anything else falls back to INFO with a complaint on stderr.
+_LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET")
+LOG_LEVEL = _env_str("FLASHGEN_LOG_LEVEL", "INFO").upper()
+if LOG_LEVEL not in _LOG_LEVELS:
+    print(
+        f"FLASHGEN_LOG_LEVEL={LOG_LEVEL!r} is not one of {_LOG_LEVELS} — using INFO",
+        file=sys.stderr,
+    )
+    LOG_LEVEL = "INFO"
+
+# Public base URL the MCP OAuth metadata advertises. Must match how clients
+# reach the server (the Cloudflare tunnel hostname in production).
+MCP_ISSUER = _env_str("FLASHGEN_MCP_ISSUER", "https://mcp.ssaito.net")
+
+# search_notes result shaping, both overridable because they trade the caller's
+# context budget against recall.
+SEARCH_FIELD_VALUE_MAX = _env_int("FLASHGEN_SEARCH_FIELD_VALUE_MAX", 400)
+SEARCH_CANDIDATE_CAP = _env_int("FLASHGEN_SEARCH_CANDIDATE_CAP", 500)
 
 
 def read_secret(name: str) -> str:
@@ -42,21 +109,21 @@ def read_secret(name: str) -> str:
             )
     return os.environ.get(name, "")
 
-# Change these to match your Anki setup
-DECK_NAME = "日本語-Soso"
-MODEL_NAME = "Japanese Listening+Production"
+# Change these to match your Anki setup, or set the env vars.
+DECK_NAME = _env_str("FLASHGEN_DECK", "日本語-Soso")
+MODEL_NAME = _env_str("FLASHGEN_MODEL", "Japanese Listening+Production")
 
 # Single-card 場面-response note type, created programmatically via AnkiConnect
 # createModel (docs/SPEC-dialog-response.md). Same fields as MODEL_NAME so
 # add_note()'s field mapping is shared; exactly one card template.
-DIALOG_MODEL_NAME = "Japanese Dialog Response"
+DIALOG_MODEL_NAME = _env_str("FLASHGEN_DIALOG_MODEL", "Japanese Dialog Response")
 
 # Single-card cued-response note type (docs/SPEC-cued-response.md): the
 # Response card of MODEL_NAME on its own, so a prompt→response note no longer
 # generates the Listening and Production cards alongside it. Deliberately NOT
 # called prompt_response — that name already denotes the 3-card usage of
 # MODEL_NAME with the prompt fields filled.
-CUED_MODEL_NAME = "Japanese Cued Response"
+CUED_MODEL_NAME = _env_str("FLASHGEN_CUED_MODEL", "Japanese Cued Response")
 
 CARD_TYPES = ("standard", "dialog_response", "cued_response")
 
@@ -175,11 +242,11 @@ GENERATED_MODELS = {
     },
 }
 
-OUTPUT_DIR = Path("anki_audio_out")
-DEFAULT_TAGS = ["jp", "auto", "conversation"]
+OUTPUT_DIR = Path(_env_str("FLASHGEN_OUTPUT_DIR", "anki_audio_out"))
+DEFAULT_TAGS = _env_list("FLASHGEN_DEFAULT_TAGS", ["jp", "auto", "conversation"])
 
-# Debug flag
-DEBUG = False
+# Debug flag — verbose payload dumps on stdout.
+DEBUG = _env_bool("FLASHGEN_DEBUG", False)
 
 
 @dataclass(frozen=True)
@@ -188,6 +255,28 @@ class TTSConfig:
     model: str
     voice: str
     extension: str
+
+
+def effective_config() -> dict[str, Any]:
+    """The resolved configuration, for logging at startup. No secrets here —
+    every value is a name, a URL, a path or a number, never a credential."""
+    return {
+        "anki_connect_url": ANKI_CONNECT_URL,
+        "anki_connect_timeout": ANKI_CONNECT_TIMEOUT,
+        "deck": DECK_NAME,
+        "model": MODEL_NAME,
+        "dialog_model": DIALOG_MODEL_NAME,
+        "cued_model": CUED_MODEL_NAME,
+        "output_dir": str(OUTPUT_DIR),
+        "default_tags": DEFAULT_TAGS,
+        "tts_provider": DEFAULT_TTS_PROVIDER,
+        "openai_tts_model": OPENAI_TTS_MODEL,
+        "gemini_tts_model": GEMINI_TTS_MODEL,
+        "openai_text_model": OPENAI_TEXT_MODEL,
+        "log_level": LOG_LEVEL,
+        "mcp_issuer": MCP_ISSUER,
+        "debug": DEBUG,
+    }
 
 
 def debug_print(label: str, value: Any) -> None:

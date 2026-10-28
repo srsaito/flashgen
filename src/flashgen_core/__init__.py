@@ -3,11 +3,16 @@ server (flashgen-8ik).
 
 Layered bottom-up, each module importing only from the ones above it:
 
-    config    constants, note-type definitions, secrets, debug printing
+    errors    the structured error contract: typed errors + one classifier
+    config    constants (env-driven), note-type definitions, secrets, debug
     furigana  text normalization, furigana rules, markup validation, HTML
     audio     TTS config resolution, filenames, provider calls
     anki      AnkiConnect client, note create/read/update, collection search
     service   create_flashcard / update_note orchestration
+
+Failures are raised as typed `errors.FlashGenError` subclasses carrying the
+contract code, so the CLI and the MCP server report the same `{"error": ...,
+"message": ...}` for the same fault without either one sniffing message text.
 
 Cross-module calls to the side-effecting layers (anki, audio) are written
 module-qualified — `anki.anki_invoke(...)`, not a bare imported name — so one
