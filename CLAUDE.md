@@ -82,3 +82,24 @@ bead data silently stayed local the whole time.
   after the fact does not help — the committed chunk still has to transfer.
 - **Do not put an `AKIA`-prefixed string in a tracked file either** (this one included),
   or `git push` hits the same wall.
+
+## `bd update --notes` REPLACES the notes field — use `--append-notes` to add
+
+`--notes` sets the field. `--append-notes` appends with a newline separator. There is no
+confirmation and no diff, so overwriting an earlier record looks exactly like adding to it.
+
+**Worked example, 2026-10-28** (bead `flashgen-tr2`): four successive `--notes` calls across one
+session silently destroyed a pre-change state record, a deactivation record, and a dated follow-up
+checklist. Only the last note survived. It was reconstructed from scratch files that happened to
+still exist — `bd dolt` history would otherwise have been the only route back.
+
+Before replacing notes deliberately, read the current field first (`bd show <id> --json`), and
+prefer `--append-notes` whenever you are adding rather than consolidating.
+
+### Keep `AKIA`-prefixed strings out of bead text specifically
+
+A dolt chunk carries the WHOLE ROW forward, so one such string in a bead's notes or description
+makes **every future push touching that bead** fail GitHub secret-scanning until somebody clicks an
+unblock URL — not just the push that introduced it. Redact to last-4 in the bead and keep the full
+ids in the vault note. Redacting afterwards fixes future chunks but not the one already committed,
+which still needs the one-time unblock.
