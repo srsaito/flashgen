@@ -890,6 +890,14 @@ def create_flashcard(
     # Notes is rendered with {{furigana:Notes}} too, so it needs the same
     # leading-space normalization (omitted until 2026-09-11).
     notes = normalize_furigana_text(normalize_line_breaks(notes))
+    # The English fields need no furigana pass, but they do need the same break
+    # normalization so the result dict below reports breaks the same way for
+    # every text field. Without it a caller's literal "\n" survives in the echo
+    # while the Japanese fields echo real newlines (flashgen-adv). This does not
+    # change what is stored: rich_text_to_html normalizes again internally and
+    # normalize_line_breaks is idempotent, so it stays the only producer of HTML.
+    english = normalize_line_breaks(english)
+    english_prompt = normalize_line_breaks(english_prompt)
     japanese_tts = resolve_tts_input(japanese, japanese_tts)
     japanese_prompt_tts = resolve_tts_input(japanese_prompt, japanese_prompt_tts)
 

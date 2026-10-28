@@ -244,6 +244,88 @@ class TestCreateFlashcardBreakIntake:
 
 
 # ---------------------------------------------------------------------------
+# create_flashcard's returned dict (flashgen-adv)
+# ---------------------------------------------------------------------------
+
+class TestCreateFlashcardResultEcho:
+    """The result dict is shown to the user verbatim — the MCP workflow asks the
+    assistant to display it, and the CLI prints it — so every text field must
+    report line breaks the same way. Before flashgen-adv the Japanese fields
+    echoed real newlines while english/english_prompt echoed the caller's raw
+    literal "\n", which is routine on cued/dialog cards with numbered cues.
+    """
+
+    FIELDS = [
+        "Japanese",
+        "English",
+        "Notes",
+        "Audio",
+        "Japanese Prompt",
+        "English Prompt",
+        "Audio Prompt",
+    ]
+
+    def _invoke(self, calls, model_names):
+        def invoke(action, params=None):
+            calls.append((action, params))
+            return {
+                "version": 6,
+                "deckNames": [flashgen.DECK_NAME],
+                "modelNames": list(model_names),
+                "modelFieldNames": list(self.FIELDS),
+                "canAddNotes": [True],
+                "addNote": 222,
+            }[action]
+
+        return invoke
+
+    def test_every_text_field_echoes_real_newlines(self):
+        calls = []
+        with patch("flashgen.anki_invoke", side_effect=self._invoke(
+                calls, [flashgen.MODEL_NAME, flashgen.DIALOG_MODEL_NAME])), \
+             patch("flashgen.generate_tts_file"), \
+             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+            result = flashgen.create_flashcard(
+                card_type="dialog_response",
+                japanese="1. はい。\\n2. いいえ。",
+                english="1. Yes.\\n2. No.",
+                notes="はい: yes\\nいいえ: no",
+                japanese_prompt="1. 行[い]きますか？\\n2. 帰[かえ]りますか？",
+                english_prompt="1. Going?\\n2. Heading back?",
+            )
+
+        # The bug: these two echoed a literal backslash-n while the Japanese
+        # fields echoed a real newline.
+        for field in ("japanese", "english", "notes", "japanese_prompt", "english_prompt"):
+            assert "\\n" not in result[field], f"{field} echoes an unnormalized literal \\n"
+            assert "\n" in result[field], f"{field} lost its line break"
+
+    def test_stored_fields_are_unchanged_by_the_echo_fix(self):
+        """Normalizing for the echo must not alter what reaches Anki:
+        rich_text_to_html normalizes again and normalize_line_breaks is
+        idempotent, so the stored HTML is <br> either way."""
+        calls = []
+        with patch("flashgen.anki_invoke", side_effect=self._invoke(
+                calls, [flashgen.MODEL_NAME, flashgen.DIALOG_MODEL_NAME])), \
+             patch("flashgen.generate_tts_file"), \
+             patch("flashgen.store_media_file", side_effect=lambda path, name: name):
+            flashgen.create_flashcard(
+                card_type="dialog_response",
+                japanese="1. はい。\\n2. いいえ。",
+                english="1. Yes.\\n2. No.",
+                japanese_prompt="行[い]きますか？",
+                english_prompt="1. Going?\\n2. Heading back?",
+            )
+
+        fields = next(p for a, p in calls if a == "addNote")["note"]["fields"]
+        assert fields["English"] == "1. Yes.<br>2. No."
+        assert fields["English Prompt"] == "1. Going?<br>2. Heading back?"
+        assert fields["Japanese"] == "1. はい。<br>2. いいえ。"
+        for value in fields.values():
+            assert "\\n" not in value
+
+
+# ---------------------------------------------------------------------------
 # resolve_tts_config
 # ---------------------------------------------------------------------------
 
