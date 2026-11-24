@@ -59,16 +59,24 @@ Card flow: Claude → MCP → `create_flashcard` (TTS via Gemini/OpenAI) → Ank
 - The old systemd `flashgen-mcp.service` (uvicorn on the host) is **superseded by the container and
   is stopped + disabled.** `deploy/flashgen-mcp.service` is kept only for historical reference.
 
-## Environment (`/home/ubuntu/flashgen/.env`)
-Copy `.env.example` → `.env` and fill in. Loaded by both containers via `env_file: ../.env`.
+## Configuration and secrets
+⚠️ **Neither container loads `/home/ubuntu/flashgen/.env`.** Secrets are Docker
+file-secrets mounted under `/run/secrets` from `deploy/secrets/` (gitignored, excluded
+from the deploy rsync) and read via the `*_FILE` variables; every other value is set in
+the `environment:` blocks of `deploy/docker-compose.yml`. ⇒ **`FLASHGEN_*` overrides
+from `.env.example` (TTS model, voice, deck, tags…) are NOT applied in production —
+the defaults in `src/flashgen_core/config.py` are what runs.** To change one there,
+change the code default, or add the variable to the compose `environment:` block.
+*(Found 2026-11-24 during the TTS migration, flashgen-glm: the host `.env` had no TTS
+variables and `docker exec flashgen-mcp printenv` showed none.)*
 
-| Var | Used by | Purpose |
+| Secret (file under `deploy/secrets/`) | Used by | Purpose |
 |-----|---------|---------|
-| `FLASHGEN_MCP_TOKEN` | flashgen-mcp | Bearer token the OAuth flow issues to Claude |
-| `GEMINI_API_KEY` | flashgen-mcp | Default TTS (Gemini); also model access |
-| `OPENAI_API_KEY` | flashgen-mcp | OpenAI TTS / auto-translation |
-| `ANKIWEB_USERNAME` | flashgen-anki | AnkiWeb login (flashgen-sync addon) |
-| `ANKIWEB_PASSWORD` | flashgen-anki | AnkiWeb login (flashgen-sync addon) |
+| `flashgen_mcp_token` | flashgen-mcp | Bearer token the OAuth flow issues to Claude |
+| `gemini_api_key` | flashgen-mcp | Default TTS (Gemini) |
+| `openai_api_key` | flashgen-mcp | OpenAI TTS / auto-translation |
+| `ankiweb_username` | flashgen-anki | AnkiWeb login (flashgen-sync addon) |
+| `ankiweb_password` | flashgen-anki | AnkiWeb login (flashgen-sync addon) |
 
 `ANKI_CONNECT_URL` is **not** set here — `docker-compose.yml` overrides it to `http://anki:8765`
 for the flashgen-mcp container.
