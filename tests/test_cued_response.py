@@ -560,7 +560,7 @@ class TestMcpCuedSurface:
             "notes": CUED_PAYLOAD["notes"],
             "tags": ["jp", "auto"],
             "tts_provider": "gemini",
-            "tts_model": "gemini-3.1-flash-tts-preview",
+            "tts_model": "gemini-3.8-flash-tts",
             "japanese_tts": "大丈夫です。",
             "audio_file": "x.wav",
             "local_audio_path": "/tmp/x.wav",

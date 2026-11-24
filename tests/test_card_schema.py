@@ -57,7 +57,7 @@ class TestCardRequestValidation:
             english_prompt="Did you take a photo?",
             japanese_prompt_tts="写真を撮りましたか？",
             tts_provider="gemini",
-            tts_model="gemini-3.1-flash-tts-preview",
+            tts_model="gemini-3.8-flash-tts",
         )
         assert req.notes == "撮影 means photography"
         assert req.tags == ["photography", "日本語"]
@@ -76,7 +76,7 @@ class TestCardResultShape:
             notes="",
             tags=["auto"],
             tts_provider="gemini",
-            tts_model="gemini-3.1-flash-tts-preview",
+            tts_model="gemini-3.8-flash-tts",
             japanese_tts="写真を撮りました。",
             audio_file="abc123.wav",
             local_audio_path="anki_audio_out/abc123.wav",
@@ -95,7 +95,7 @@ class TestCardResultShape:
             notes="",
             tags=["auto"],
             tts_provider="gemini",
-            tts_model="gemini-3.1-flash-tts-preview",
+            tts_model="gemini-3.8-flash-tts",
             japanese_tts="写真を撮りました。",
             audio_file="abc123.wav",
             local_audio_path="anki_audio_out/abc123.wav",
@@ -116,7 +116,7 @@ class TestCardResultShape:
             notes="",
             tags=["auto"],
             tts_provider="gemini",
-            tts_model="gemini-3.1-flash-tts-preview",
+            tts_model="gemini-3.8-flash-tts",
             japanese_tts="日本に行きますか？",
             audio_file="abc123.wav",
             local_audio_path="anki_audio_out/abc123.wav",

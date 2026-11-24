@@ -115,7 +115,7 @@ export FLASHGEN_MODEL="Japanese Listening+Production" # Your note type name (see
 
 `.env.example` lists every override — deck and note-type names, TTS provider/model/voice, default tags, output directory, AnkiConnect URL and timeout, log level. The defaults themselves live in `src/flashgen_core/config.py`, which is also where to change them permanently.
 
-You can also adjust the default TTS provider, provider-specific voices/models, and default tags this way. As of May 4, 2026, the repo defaults to Gemini TTS with `gemini-3.1-flash-tts-preview` and the `Algenib` voice, and uses `gpt-4o-mini-tts` with the `onyx` voice when `tts_provider` is set to `openai`. FlashGen does not maintain a provider-specific model allowlist, so `tts_provider: "gemini"` can also be paired with another valid Gemini TTS model string such as `gemini-2.5-flash-preview-tts`.
+You can also adjust the default TTS provider, provider-specific voices/models, and default tags this way. As of November 24, 2026, the repo defaults to Gemini TTS with `gemini-3.8-flash-tts` and the `Algenib` voice, and uses `gpt-4o-mini-tts` with the `onyx` voice when `tts_provider` is set to `openai`. FlashGen does not maintain a provider-specific model allowlist, so `tts_provider: "gemini"` can also be paired with another valid Gemini TTS model string such as `gemini-3.8-flash-lite-tts`. The one exception is the models Google retired on 2026-12-18 (`gemini-3.1-flash-tts-preview`, `gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`): FlashGen rejects them with a validation error that names the replacement.
 
 ### 5. Add the `flashgen` alias to `~/.zshrc`
 
@@ -373,7 +373,7 @@ The card appears in Anki immediately, complete with TTS audio.
   "japanese_prompt_tts": "string (optional — plain Japanese text used for prompt TTS; falls back to stripped japanese_prompt when omitted)",
   "card_type":       "string (optional — standard (default), dialog_response, or cued_response; see Card types above)",
   "tts_provider":    "string (optional — openai or gemini; defaults to gemini when both TTS fields are omitted)",
-  "tts_model":       "string (optional — provider-specific TTS model id such as gemini-3.1-flash-tts-preview, gemini-2.5-flash-preview-tts, or gpt-4o-mini-tts; must be provided together with tts_provider)"
+  "tts_model":       "string (optional — provider-specific TTS model id such as gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts, or gpt-4o-mini-tts; must be provided together with tts_provider)"
 }
 ```
 
@@ -392,7 +392,7 @@ At least one of `japanese` or `english` is required. `japanese_prompt` and `engl
   "notes":            "...",
   "tags":             ["..."],
   "tts_provider":     "gemini",
-  "tts_model":        "gemini-3.1-flash-tts-preview",
+  "tts_model":        "gemini-3.8-flash-tts",
   "japanese_tts":     "...",
   "audio_file":       "filename.wav",
   "local_audio_path": "anki_audio_out/filename.wav",

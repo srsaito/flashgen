@@ -128,7 +128,7 @@ FlashGen result JSON:
   "notes":             "...",
   "tags":              ["..."],
   "tts_provider":      "gemini",
-  "tts_model":         "gemini-3.1-flash-tts-preview",
+  "tts_model":         "gemini-3.8-flash-tts",
   "japanese_tts":      "...",
   "audio_file":        "filename.wav",
   "local_audio_path":  "anki_audio_out/filename.wav",

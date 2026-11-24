@@ -261,7 +261,7 @@ class TestMcpDialogSurface:
             "notes": DIALOG_PAYLOAD["notes"],
             "tags": ["jp"],
             "tts_provider": "gemini",
-            "tts_model": "gemini-3.1-flash-tts-preview",
+            "tts_model": "gemini-3.8-flash-tts",
             "japanese_tts": "お先に失礼します。",
             "audio_file": "x.wav",
             "local_audio_path": "/tmp/x.wav",

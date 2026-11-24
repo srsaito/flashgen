@@ -59,7 +59,7 @@ There are four types of flashcards you can create. The first two use the `Japane
   "japanese_prompt_tts": "...",
   "card_type": "dialog_response",
   "tts_provider": "gemini",
-  "tts_model": "gemini-3.1-flash-tts-preview"
+  "tts_model": "gemini-3.8-flash-tts"
 }
 ```
 
@@ -84,7 +84,7 @@ Allowed `tts_provider` values are:
 
 When `tts_provider` is included, `tts_model` must match that provider's model family. Use:
 
-- `gemini` with a Gemini TTS model such as `gemini-3.1-flash-tts-preview` or `gemini-2.5-flash-preview-tts`
+- `gemini` with a Gemini TTS model such as `gemini-3.8-flash-tts` or `gemini-3.8-flash-lite-tts`
 - `openai` with an OpenAI TTS model such as `gpt-4o-mini-tts`
 
 ## Rules
@@ -98,9 +98,9 @@ When `tts_provider` is included, `tts_model` must match that provider's model fa
 * Include `card_type: "dialog_response"` only for Dialog Response cards (single audio-prompt card) and `card_type: "cued_response"` only for Cued Response cards (single card, English cues on the front); both require `japanese_prompt`. Omit `card_type` otherwise
 * Include `tts_provider` and `tts_model` only when I explicitly ask to force a TTS backend or model; otherwise omit both keys so FlashGen can use its default Gemini TTS path
 * If `tts_provider` is present, it must be exactly `gemini` or `openai`
-* If `tts_provider` is `gemini`, use a Gemini TTS model such as `gemini-3.1-flash-tts-preview` or `gemini-2.5-flash-preview-tts`
+* If `tts_provider` is `gemini`, use a Gemini TTS model such as `gemini-3.8-flash-tts` or `gemini-3.8-flash-lite-tts`. Never use `gemini-3.1-flash-tts-preview`, `gemini-2.5-flash-preview-tts` or `gemini-2.5-pro-preview-tts`: Google retired them and FlashGen rejects them
 * If `tts_provider` is `openai`, use an OpenAI TTS model such as `gpt-4o-mini-tts`
-* FlashGen defaults to `gemini-3.1-flash-tts-preview` when both TTS fields are omitted, but if I explicitly request Gemini 2.5 you may emit `tts_provider: "gemini"` with `tts_model: "gemini-2.5-flash-preview-tts"`
+* FlashGen defaults to `gemini-3.8-flash-tts` when both TTS fields are omitted; if I explicitly ask for the low-latency model you may emit `tts_provider: "gemini"` with `tts_model: "gemini-3.8-flash-lite-tts"`
 * If `english` is not specified, generate a natural English translation based on the conversation
 * Furigana Rule (This rule is STRICT and NON-OPTIONAL):
   - Any kanji sequence that is annotated MUST follow:

@@ -57,7 +57,7 @@ def _env_list(name: str, default: list[str]) -> list[str]:
 DEFAULT_TTS_PROVIDER = _env_str("FLASHGEN_TTS_PROVIDER", "gemini")
 OPENAI_TTS_MODEL = _env_str("FLASHGEN_OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
 OPENAI_TTS_VOICE = _env_str("FLASHGEN_OPENAI_TTS_VOICE", "onyx")
-GEMINI_TTS_MODEL = _env_str("FLASHGEN_GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
+GEMINI_TTS_MODEL = _env_str("FLASHGEN_GEMINI_TTS_MODEL", "gemini-3.8-flash-tts")
 GEMINI_TTS_VOICE = _env_str("FLASHGEN_GEMINI_TTS_VOICE", "Algenib")
 OPENAI_TEXT_MODEL = _env_str("FLASHGEN_OPENAI_TEXT_MODEL", "gpt-4.1-mini")
 
